@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AURAS – {{ class_name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --navy: #1F3864;
+            --blue: #2E75B6;
+            --light-blue: #EBF3FB;
+        }
+
+        body {
+            background: #f4f7fc;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        /* ── Navbar ── */
+        .navbar {
+            background: var(--navy) !important;
+        }
+
+        .badge-class {
+            background: var(--blue);
+            font-size: .85rem;
+            padding: .35em .75em;
+            border-radius: 20px;
+        }
+
+        /* ── Cards ── */
+        .card {
+            border: none;
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, .08);
+        }
+
+        .card-header {
+            border-radius: 14px 14px 0 0 !important;
+            font-weight: 700;
+            letter-spacing: .5px;
+        }
+
+        .card-header.navy {
+            background: var(--navy);
+            color: #fff;
+        }
+
+        .card-header.blue {
+            background: var(--blue);
+            color: #fff;
+        }
+
+        /* ── Tabs: single scrollable row on all screen sizes ── */
+        .tab-scroll-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .tab-scroll-wrap::-webkit-scrollbar {
+            display: none;
+        }
+
+        .nav-tabs {
+            flex-wrap: nowrap;
+            border-bottom: 2px solid var(--navy);
+            min-width: max-content;
+        }
+
+        .nav-tabs .nav-link {
+            color: var(--navy);
+            font-weight: 600;
+            border: none;
+            padding: .55rem 1rem;
+            border-radius: 8px 8px 0 0;
+            white-space: nowrap;
+            font-size: .88rem;
+        }
+
+        .nav-tabs .nav-link.active {
+            background: var(--navy);
+            color: #fff;
+        }
+
+        /* ── Matrix tables ── */
+        .matrix-wrap {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 10px;
+        }
+
+        .matrix-wrap::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .matrix-wrap::-webkit-scrollbar-thumb {
+            background: var(--blue);
+            border-radius: 4px;
+        }
+
+        .matrix-table {
+            font-size: .82rem;
+            white-space: nowrap;
+            border-collapse: separate;
+            border-spacing: 0;
+            min-width: 100%;
+        }
+
+        /* Sticky header row */
+        .matrix-table thead th {
+            background: var(--navy);
+            color: #fff;
+            padding: 8px 14px;
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            border-right: 1px solid rgba(255, 255, 255, .15);
+        }
+
+        /* Sticky first column (reg no + name combined) */
+        .matrix-table thead th:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 3;
+            background: var(--navy);
+        }
+
+        .matrix-table tbody td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            background: inherit;
+            border-right: 2px solid #c0d4ec;
+        }
+
+        /* Alternating rows */
+        .matrix-table tbody tr:nth-child(even) td {
+            background: var(--light-blue);
+        }
+
+        .matrix-table tbody tr:nth-child(odd) td {
+            background: #fff;
+        }
+
+        .matrix-table tbody td {
+            padding: 7px 12px;
+            border-bottom: 1px solid #e0e8f0;
+            vertical-align: middle;
+        }
+
+        /* Combined reg+name cell */
+        .reg-cell {
+            min-width: 140px;
+            max-width: 200px;
+        }
+
+        .reg-no {
+            font-weight: 700;
+            font-size: .8rem;
+            display: block;
+            line-height: 1.2;
+        }
+
+        .reg-name {
+            font-size: .7rem;
+            color: #666;
+            display: block;
+            line-height: 1.2;
+            margin-top: 1px;
+            white-space: normal;
+            max-width: 180px;
+        }
+
+        /* Semester value cells */
+        .matrix-table td.sem-val {
+            text-align: center;
+            min-width: 54px;
+            font-size: .82rem;
+            font-weight: 600;
+        }
+
+        /* ── SGPA colour coding ── */
+        .sgpa-high {
+            background: #c6efce !important;
+            color: #276221;
+            font-weight: 700;
+        }
+
+        .sgpa-mid {
+            background: #ffeb9c !important;
+            color: #9c5700;
+            font-weight: 600;
+        }
+
+        .sgpa-low {
+            background: #ffc7ce !important;
+            color: #9c0006;
+            font-weight: 700;
+        }
+
+        /* ── Backlog colour coding ── */
+        .bl-zero {
+            background: #c6efce !important;
+            color: #276221;
+            font-weight: 700;
+        }
+
+        .bl-low {
+            background: #ffeb9c !important;
+            color: #9c5700;
+            font-weight: 600;
+        }
+
+        .bl-high {
+            background: #ffc7ce !important;
+            color: #9c0006;
+            font-weight: 700;
+        }
+
+        /* ── Mobile tweaks ── */
+        @media (max-width: 576px) {
+            .matrix-table {
+                font-size: .75rem;
+            }
+
+            .matrix-table thead th {
+                padding: 6px 10px;
+                font-size: .72rem;
+            }
+
+            .matrix-table tbody td {
+                padding: 5px 8px;
+            }
+
+            .reg-no {
+                font-size: .72rem;
+            }
+
+            .reg-name {
+                font-size: .63rem;
+            }
+
+            .matrix-table td.sem-val {
+                min-width: 46px;
+                font-size: .75rem;
+            }
+
+            .reg-cell {
+                min-width: 120px;
+            }
+
+            .tab-content {
+                padding: 12px 8px !important;
+            }
+        }
+
+        /* ── Subject Analysis ── */
+        .grade-bar-wrap {
+            background: #f0f4fb;
+            border-radius: 10px;
+            padding: 24px;
+        }
+
+        .grade-bar {
+            display: flex;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+
+        .grade-label {
+            width: 46px;
+            font-weight: 700;
+            font-size: .95rem;
+            text-align: center;
+            padding: 4px 6px;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+
+        .grade-track {
+            flex: 1;
+            background: #dde8f7;
+            border-radius: 20px;
+            height: 32px;
+            overflow: hidden;
+        }
+
+        .grade-fill {
+            height: 100%;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            padding-left: 10px;
+            font-size: .85rem;
+            font-weight: 700;
+            color: #fff;
+            transition: width .4s;
+            min-width: fit-content;
+        }
+
+        .grade-count {
+            min-width: 70px;
+            text-align: right;
+            font-size: .85rem;
+            color: #555;
+            padding-left: 10px;
+            font-weight: 600;
+        }
+
+        .pass-bg {
+            background: #2e75b6;
+        }
+
+        .fail-bg {
+            background: #e74c3c;
+        }
+
+        .pass-label {
+            background: #c6efce;
+            color: #276221;
+        }
+
+        .fail-label {
+            background: #ffc7ce;
+            color: #9c0006;
+        }
+
+        /* ── Upload area ── */
+        .upload-drop {
+            border: 2px dashed #2e75b6;
+            border-radius: 12px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: background .2s;
+            background: #f8fbff;
+        }
+
+        .upload-drop:hover {
+            background: var(--light-blue);
+        }
+
+        /* ── Misc ── */
+        .stat-badge {
+            font-size: 1.4rem;
+            font-weight: 700;
+        }
+
+        .table-scroll {
+            max-height: 56vh;
+            overflow-y: auto;
+        }
+
+        .sticky-header thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ══ Navbar ══════════════════════════════════════════════════════════════ -->
+    <nav class="navbar navbar-dark mb-4 shadow-sm">
+        <div class="container-xl d-flex align-items-center justify-content-between">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="/">
+                <img src="/static/logo.png" height="32" alt="">
+                <span class="fw-bold fs-5">AURAS</span>
+                <span class="badge-class ms-1">{{ class_name }}</span>
+            </a>
+            <div class="d-flex gap-2">
+                <a href="/select_class" class="btn btn-outline-info btn-sm">Switch Class</a>
+                <a href="/logout" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-xl pb-5">
+
+        <!-- ══ Flash message ══ -->
+        {% if session.get('upload_msg') %}
+        <div class="alert alert-info alert-dismissible fade show mb-3" role="alert">
+            {{ session.pop('upload_msg') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+
+        <!-- ══ Top row: Upload + Export ══════════════════════════════════════════ -->
+        <div class="row g-3 mb-4">
+
+            <div class="col-12 col-lg-7">
+                <div class="card h-100">
+                    <div class="card-header navy">📤 Upload Class Report PDF</div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-2">
+                            Upload a KTU Semester Grade Card Report PDF for
+                            <strong>{{ class_name }}</strong>. Each PDF adds / updates
+                            one semester's data for the entire class.
+                        </p>
+                        <form action="/upload" method="POST" enctype="multipart/form-data" id="uploadForm">
+                            <div class="upload-drop" onclick="document.getElementById('pdf_file').click()">
+                                <div class="mb-2">📄</div>
+                                <div class="fw-semibold">Click to select PDF(s)</div>
+                                <div class="text-muted small">or drag &amp; drop here</div>
+                                <input type="file" id="pdf_file" name="pdf_file" accept=".pdf" multiple hidden
+                                    onchange="updateLabel(this)">
+                                <div id="fileLabel" class="mt-2 text-primary small"></div>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100 mt-3 fw-bold py-2">
+                                Upload &amp; Process
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-5">
+                <div class="card mb-3">
+                    <div class="card-header navy">📥 Export Full Report</div>
+                    <div class="card-body d-flex flex-column justify-content-between">
+                        <p class="text-muted small">
+                            Download a comprehensive Excel report with SGPA matrix,
+                            net backlog matrix, and per-subject grade analysis sheets.
+                        </p>
+                        <a href="/download_report" class="btn btn-success fw-bold py-2 w-100">
+                            📊 Download Excel Report
+                        </a>
+                    </div>
+                </div>
+                <div class="card mb-3">
+                    <div class="card-header blue">📋 Export Subject Report</div>
+                    <div class="card-body">
+                        <p class="text-muted small mb-2">
+                            Download an Excel report for a specific subject with detailed analysis.
+                        </p>
+                        <div class="row g-2 mb-2">
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold mb-1">
+                                    <span
+                                        style="background:var(--navy);color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;">1</span>
+                                    Semester
+                                </label>
+                                <select id="exportSemSelect" class="form-select form-select-sm"
+                                    onchange="onExportSemChange()">
+                                    <option value="">— Semester —</option>
+                                    {% for c in courses %}
+                                    {% if c.semester not in [] %}
+                                    {% endif %}
+                                    {% endfor %}
+                                    {% set export_sems = [] %}
+                                    {% for c in courses %}
+                                    {% if c.semester not in export_sems %}
+                                    {% set _ = export_sems.append(c.semester) %}
+                                    <option value="{{ c.semester }}">{{ c.semester }}</option>
+                                    {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold mb-1">
+                                    <span id="exportStep2Badge"
+                                        style="background:#adb5bd;color:#fff;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;transition:background .2s;">2</span>
+                                    Subject
+                                </label>
+                                <select id="exportCourseSelect" class="form-select form-select-sm"
+                                    onchange="onExportCourseChange()" disabled>
+                                    <option value="">— Select semester first —</option>
+                                </select>
+                            </div>
+                        </div>
+                        <a id="exportSubjectBtn" href="#" class="btn btn-outline-primary fw-bold py-2 w-100 disabled"
+                            onclick="return !!document.getElementById('exportCourseSelect').value;">
+                            📥 Download Subject Report
+                        </a>
+                    </div>
+                </div>
+                {% if role == 'admin' %}
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex gap-2">
+                            <form action="/clear_database" method="POST"
+                                onsubmit="return confirm('Clear data for {{ class_name }} only?');" class="flex-fill">
+                                <input type="hidden" name="scope" value="class">
+                                <button class="btn btn-outline-danger btn-sm w-100">
+                                    Clear {{ class_name }}
+                                </button>
+                            </form>
+                            <form action="/clear_database" method="POST"
+                                onsubmit="return confirm('⚠️ Delete ALL data from ALL classes?');" class="flex-fill">
+                                <input type="hidden" name="scope" value="all">
+                                <button class="btn btn-danger btn-sm w-100">
+                                    Clear All Data
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- ══ Stats row ════════════════════════════════════════════════════════ -->
+        {% set total_students = sgpa_matrix | length %}
+        {% if total_students > 0 %}
+        {% set last_sem_data = sgpa_matrix | map(attribute='sems') | list %}
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-3">
+                    <div class="stat-badge text-primary">{{ total_students }}</div>
+                    <div class="text-muted small">Students</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-3">
+                    <div class="stat-badge text-success">{{ sems | length }}</div>
+                    <div class="text-muted small">Semesters</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-3">
+                    <div class="stat-badge text-info">{{ courses | length }}</div>
+                    <div class="text-muted small">Courses</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-3">
+                    {% set bl_students = backlog_matrix | selectattr('sems') | list %}
+                    {% set total_bl = namespace(v=0) %}
+                    {% for s in backlog_matrix %}
+                    {% for sem, bl in s.sems.items() %}
+                    {% if bl != '-' and bl > 0 %}{% set total_bl.v = total_bl.v + 1 %}{% endif %}
+                    {% endfor %}
+                    {% endfor %}
+                    <div class="stat-badge text-danger">{{ total_bl.v }}</div>
+                    <div class="text-muted small">Active Backlogs</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ══ Main Tabs ════════════════════════════════════════════════════════ -->
+        <div class="tab-scroll-wrap">
+            <ul class="nav nav-tabs mb-0" id="mainTabs">
+                <li class="nav-item">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-sgpa">📈 SGPA
+                        Matrix</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-backlogs">⚠️ Backlog
+                        Matrix</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-subjects">📊 Subject
+                        Analysis</button>
+                </li>
+            </ul>
+        </div>
+
+        <div class="tab-content bg-white rounded-bottom shadow-sm p-3">
+
+            <!-- ── SGPA Matrix Tab ─────────────────────────────────────────── -->
+            <div class="tab-pane fade show active" id="tab-sgpa">
+                {% if sgpa_matrix %}
+                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                    <h6 class="mb-0 fw-bold text-navy">Semester-wise SGPA for {{ class_name }}</h6>
+                    <div class="d-flex gap-2 align-items-center small">
+                        <span class="badge" style="background:#c6efce;color:#276221;">≥ 8.5 Excellent</span>
+                        <span class="badge" style="background:#ffeb9c;color:#9c5700;">6.0–8.5 Good</span>
+                        <span class="badge" style="background:#ffc7ce;color:#9c0006;">&lt; 6.0 At Risk</span>
+                    </div>
+                </div>
+                <div class="matrix-wrap table-scroll">
+                    <table class="matrix-table">
+                        <thead>
+                            <tr>
+                                <th class="reg-cell">Student</th>
+                                {% for sem in sems %}<th class="text-center">{{ sem }}</th>{% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in sgpa_matrix %}
+                            <tr>
+                                <td class="reg-cell">
+                                    <span class="reg-no">{{ row.register_no }}</span>
+                                    {% if row.name %}<span class="reg-name">{{ row.name }}</span>{% endif %}
+                                </td>
+                                {% for sem in sems %}
+                                {% set v = row.sems.get(sem, '-') %}
+                                <td class="sem-val
+                                {% if v != '-' %}
+                                    {% if v >= 8.5 %}sgpa-high
+                                    {% elif v >= 6.0 %}sgpa-mid
+                                    {% else %}sgpa-low{% endif %}
+                                {% endif %}">
+                                    {{ v if v == '-' else '%.2f' | format(v) }}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <div class="fs-1">📭</div>
+                    <p>No data yet for {{ class_name }}. Upload a Semester Grade Card PDF to begin.</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- ── Backlog Matrix Tab ─────────────────────────────────────── -->
+            <div class="tab-pane fade" id="tab-backlogs">
+                {% if backlog_matrix %}
+                <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+                    <h6 class="mb-0 fw-bold">Net Cumulative Backlogs – {{ class_name }}</h6>
+                    <div class="d-flex gap-2 align-items-center small">
+                        <span class="badge" style="background:#c6efce;color:#276221;">0 Clear</span>
+                        <span class="badge" style="background:#ffeb9c;color:#9c5700;">1–2 Warning</span>
+                        <span class="badge" style="background:#ffc7ce;color:#9c0006;">3+ Critical</span>
+                    </div>
+                </div>
+                <div class="matrix-wrap table-scroll">
+                    <table class="matrix-table">
+                        <thead>
+                            <tr>
+                                <th class="reg-cell">Student</th>
+                                {% for sem in sems %}<th class="text-center">{{ sem }}</th>{% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in backlog_matrix %}
+                            <tr>
+                                <td class="reg-cell">
+                                    <span class="reg-no">{{ row.register_no }}</span>
+                                    {% if row.name %}<span class="reg-name">{{ row.name }}</span>{% endif %}
+                                </td>
+                                {% for sem in sems %}
+                                {% set v = row.sems.get(sem, '-') %}
+                                <td class="sem-val
+                                {% if v != '-' %}
+                                    {% if v == 0 %}bl-zero
+                                    {% elif v <= 2 %}bl-low
+                                    {% else %}bl-high{% endif %}
+                                {% endif %}">
+                                    {% if v == 0 %}✓{% elif v != '-' %}{{ v }}{% else %}-{% endif %}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <div class="fs-1">📭</div>
+                    <p>No backlog data available yet.</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- ── Subject Analysis Tab ──────────────────────────────────── -->
+            <div class="tab-pane fade" id="tab-subjects">
+                {% if courses %}
+
+                {# Build a dict-like structure: semester → list of courses #}
+                {% set sem_courses = {} %}
+                {% for c in courses %}
+                {% if c.semester not in sem_courses %}
+                {% set _ = sem_courses.update({c.semester: []}) %}
+                {% endif %}
+                {% set _ = sem_courses[c.semester].append(c) %}
+                {% endfor %}
+
+                <div class="row g-3 mb-4 align-items-center">
+
+                    <!-- Step 1: Semester -->
+                    <div class="col-12 col-md-4">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <span
+                                style="background:var(--navy);color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;">1</span>
+                            <label class="form-label mb-0 fw-semibold small">Select Semester</label>
+                        </div>
+                        <select id="semSelect" class="form-select" onchange="onSemChange()">
+                            <option value="">— Choose Semester —</option>
+                            {% for sem in sem_courses.keys() | sort %}
+                            <option value="{{ sem }}">Semester {{ sem }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Arrow -->
+                    <div class="col-auto d-none d-md-flex align-items-end pb-1" style="padding-top:28px;">
+                        <span style="color:#2E75B6;font-size:1.4rem;">→</span>
+                    </div>
+
+                    <!-- Step 2: Subject (populated by JS) -->
+                    <div class="col-12 col-md-6">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <span id="step2Badge"
+                                style="background:#adb5bd;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;transition:background .2s;">2</span>
+                            <label class="form-label mb-0 fw-semibold small" id="step2Label">Select Subject</label>
+                        </div>
+                        <select id="courseSelect" class="form-select" onchange="loadSubjectAnalysis()" disabled>
+                            <option value="">— Select a semester first —</option>
+                        </select>
+                    </div>
+
+                </div>
+
+                <!-- Hidden data: semester → courses JSON for JS -->
+                <script id="semCoursesData" type="application/json">
+            {
+                {% for sem, clist in sem_courses.items() %}
+                "{{ sem }}": [
+                    {% for c in clist %}
+                    { "code": "{{ c.code }}", "name": "{{ c.name }}", "sem": "{{ c.semester }}" }{% if not loop.last %},{% endif %}
+                    {% endfor %}
+                ]{% if not loop.last %},{% endif %}
+                {% endfor %}
+            }
+            </script>
+
+                <div id="subjectAnalysisPanel">
+                    <div class="text-center py-5 text-muted">
+                        <div class="fs-1">🎓</div>
+                        <p class="mb-0">Select a semester and subject to view grade analysis.</p>
+                    </div>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <div class="fs-1">📭</div>
+                    <p>No course data available yet.</p>
+                </div>
+                {% endif %}
+            </div>
+
+        </div><!-- /tab-content -->
+    </div><!-- /container -->
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // ── File label ──────────────────────────────────────────────────────────────
+        function updateLabel(input) {
+            const label = document.getElementById('fileLabel');
+            if (input.files.length === 0) { label.textContent = ''; return; }
+            const names = Array.from(input.files).map(f => f.name).join(', ');
+            label.textContent = `Selected: ${names}`;
+        }
+
+        // ── Drag & drop ─────────────────────────────────────────────────────────────
+        const dropZone = document.querySelector('.upload-drop');
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.background = '#d0e8ff'; });
+        dropZone.addEventListener('dragleave', () => { dropZone.style.background = ''; });
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.style.background = '';
+            const dt = e.dataTransfer;
+            const input = document.getElementById('pdf_file');
+            input.files = dt.files;
+            updateLabel(input);
+        });
+
+        // ── Subject Analysis ────────────────────────────────────────────────────────
+        let chartInstance = null;
+
+        // Step 1: Semester selected → populate subject dropdown
+        function onSemChange() {
+            const sem = document.getElementById('semSelect').value;
+            const courseSel = document.getElementById('courseSelect');
+            const panel = document.getElementById('subjectAnalysisPanel');
+            const badge = document.getElementById('step2Badge');
+            const lbl = document.getElementById('step2Label');
+
+            courseSel.innerHTML = '<option value="">— Select Subject —</option>';
+            courseSel.disabled = !sem;
+
+            // Activate step 2 badge colour
+            badge.style.background = sem ? 'var(--navy)' : '#adb5bd';
+            lbl.textContent = sem ? `Select Subject  ·  Semester ${sem}` : 'Select Subject';
+
+            panel.innerHTML = sem
+                ? `<div class="text-center py-5 text-muted"><div class="fs-1">📚</div>
+           <p class="mb-0">Now select a subject for <strong>Semester ${sem}</strong>.</p></div>`
+                : `<div class="text-center py-5 text-muted"><div class="fs-1">🎓</div>
+           <p class="mb-0">Select a semester and subject to view grade analysis.</p></div>`;
+
+            if (!sem) return;
+
+            const rawData = document.getElementById('semCoursesData');
+            const semCourses = JSON.parse(rawData.textContent);
+            const courses = semCourses[sem] || [];
+
+            courses.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.code;
+                opt.dataset.sem = c.sem;
+                opt.textContent = c.code + ' \u2013 ' + c.name;
+                courseSel.appendChild(opt);
+            });
+        }
+
+        // Step 2: Subject selected → fetch and render
+        async function loadSubjectAnalysis() {
+            const sel = document.getElementById('courseSelect');
+            const code = sel.value;
+            const sem = sel.options[sel.selectedIndex]?.dataset.sem || '';
+            const panel = document.getElementById('subjectAnalysisPanel');
+
+            if (!code) return;
+
+            panel.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+
+            try {
+                const res = await fetch(`/api/subject_analysis?code=${encodeURIComponent(code)}&sem=${sem}`);
+                const data = await res.json();
+                renderSubjectAnalysis(data, panel);
+            } catch (e) {
+                panel.innerHTML = '<div class="alert alert-danger">Failed to load data.</div>';
+            }
+        }
+
+        function renderSubjectAnalysis(data, panel) {
+            if (!data.distribution || data.distribution.length === 0) {
+                panel.innerHTML = '<div class="text-muted text-center py-4">No grade data for this course.</div>';
+                return;
+            }
+
+            const total = data.total;
+            const passData = data.distribution.filter(d => !d.fail);
+            const failData = data.distribution.filter(d => d.fail);
+            const passCnt = passData.reduce((s, d) => s + d.count, 0);
+            const failCnt = failData.reduce((s, d) => s + d.count, 0);
+            const passRate = total ? Math.round(passCnt / total * 100) : 0;
+
+            const labels = data.distribution.map(d => d.grade);
+            const counts = data.distribution.map(d => d.count);
+
+            // Distinct colour per grade so every pie slice is easily distinguishable
+            const gradeColorMap = {
+                'S': '#1B9E3E',   // vivid green
+                'A+': '#27AE60',   // emerald
+                'A': '#2ECC71',   // light green
+                'B+': '#2E86C1',   // strong blue
+                'B': '#3498DB',   // sky blue
+                'C+': '#AF7AC5',   // soft purple
+                'C': '#F39C12',   // amber / orange
+                'D': '#E67E22',   // deep orange
+                'P': '#F1C40F',   // gold / yellow
+                'F': '#E74C3C',   // red
+                'FE': '#C0392B',   // dark red
+            };
+            // Fallback: cycle through a set of extra colours for any unexpected grades
+            const fallbackColors = ['#1ABC9C', '#8E44AD', '#D35400', '#16A085', '#7F8C8D'];
+            let fallbackIdx = 0;
+            const bgColors = data.distribution.map(d => {
+                if (gradeColorMap[d.grade]) return gradeColorMap[d.grade];
+                return fallbackColors[(fallbackIdx++) % fallbackColors.length];
+            });
+
+            panel.innerHTML = `
+        <div class="row g-3">
+            <div class="col-12">
+                <h6 class="fw-bold mb-0">${data.code} – ${data.name}
+                    <span class="badge bg-secondary ms-2">${data.semester}</span>
+                </h6>
+                <p class="text-muted small mb-0">Total Students: ${total}</p>
+            </div>
+
+            <!-- Stats Row 1 -->
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-2">
+                    <div class="fw-bold fs-4 text-primary">${total}</div>
+                    <div class="text-muted small">Total</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-2">
+                    <div class="fw-bold fs-4 text-success">${passCnt}</div>
+                    <div class="text-muted small">Passed</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-2">
+                    <div class="fw-bold fs-4 text-danger">${failCnt}</div>
+                    <div class="text-muted small">Failed</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-2">
+                    <div class="fw-bold fs-4 ${passRate >= 80 ? 'text-success' : passRate >= 60 ? 'text-warning' : 'text-danger'}">${passRate}%</div>
+                    <div class="text-muted small">Pass Rate</div>
+                </div>
+            </div>
+
+            <!-- Stats Row 2: Advanced Analytics -->
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-2" style="border-left:3px solid #2E75B6;">
+                    <div class="fw-bold fs-4" style="color:#2E75B6;">${data.avg_grade_point}</div>
+                    <div class="text-muted small">Avg Grade Point</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-2" style="border-left:3px solid #1B9E3E;">
+                    <div class="fw-bold fs-5" style="color:#1B9E3E;">${data.topper_grade} <span class="badge bg-success" style="font-size:.7rem;">${data.topper_count}</span></div>
+                    <div class="text-muted small">Topper Grade</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card text-center py-2" style="border-left:3px solid #8E44AD;">
+                    <div class="fw-bold fs-4" style="color:#8E44AD;">${data.quality_index}%</div>
+                    <div class="text-muted small">Quality Index (≥B+)</div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card py-2 px-3" style="border-left:3px solid #E67E22;">
+                    <div class="text-muted small mb-1 text-center">Pass / Fail Split</div>
+                    <div style="display:flex;height:22px;border-radius:10px;overflow:hidden;background:#eee;">
+                        <div style="width:${passRate}%;background:linear-gradient(90deg,#27AE60,#2ECC71);display:flex;align-items:center;justify-content:center;color:#fff;font-size:.72rem;font-weight:700;">${passCnt}</div>
+                        <div style="width:${100 - passRate}%;background:linear-gradient(90deg,#E74C3C,#C0392B);display:flex;align-items:center;justify-content:center;color:#fff;font-size:.72rem;font-weight:700;">${failCnt > 0 ? failCnt : ''}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bar chart -->
+            <div class="col-12 col-md-7">
+                <div class="grade-bar-wrap">
+                    <div class="fw-semibold mb-3 small text-uppercase text-muted">Grade Distribution</div>
+                    ${(() => {
+                    const maxCount = Math.max(...data.distribution.map(d => d.count));
+                    return data.distribution.map(d => {
+                        const pct = total ? (d.count / total * 100).toFixed(1) : 0;
+                        const barWidth = maxCount ? (d.count / maxCount * 100).toFixed(1) : 0;
+                        const barColor = gradeColorMap[d.grade] || (d.fail ? '#E74C3C' : '#2E75B6');
+                        const cls = d.fail ? 'fail' : 'pass';
+                        return `<div class="grade-bar">
+                            <span class="grade-label ${cls}-label">${d.grade}</span>
+                            <div class="grade-track">
+                                <div class="grade-fill" style="width:${Math.max(parseFloat(barWidth), 4)}%;background:${barColor}">${pct}%</div>
+                            </div>
+                            <span class="grade-count">${d.count} (${pct}%)</span>
+                        </div>`;
+                    }).join('');
+                })()}
+                </div>
+            </div>
+
+            <!-- Pie chart -->
+            <div class="col-12 col-md-5 d-flex align-items-center justify-content-center">
+                <div style="max-width:280px;width:100%">
+                    <canvas id="gradeChart"></canvas>
+                </div>
+            </div>
+        </div>`;
+
+            // Draw Chart.js pie
+            if (chartInstance) { chartInstance.destroy(); }
+            const ctx = document.getElementById('gradeChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels,
+                    datasets: [{ data: counts, backgroundColor: bgColors, borderColor: '#fff', borderWidth: 3 }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'right', labels: { font: { size: 12 } } },
+                        title: { display: false }
+                    }
+                }
+            });
+        }
+
+        // Two-step selection: use onSemChange() + loadSubjectAnalysis() driven by user interaction.
+
+        // ── Export Subject Report: 2-step selection ──────────────────────────────────
+        function onExportSemChange() {
+            const sem = document.getElementById('exportSemSelect').value;
+            const courseSel = document.getElementById('exportCourseSelect');
+            const badge = document.getElementById('exportStep2Badge');
+            const btn = document.getElementById('exportSubjectBtn');
+
+            courseSel.innerHTML = '<option value="">— Select Subject —</option>';
+            courseSel.disabled = !sem;
+            badge.style.background = sem ? 'var(--navy)' : '#adb5bd';
+            btn.classList.add('disabled');
+            btn.href = '#';
+
+            if (!sem) return;
+
+            const rawData = document.getElementById('semCoursesData');
+            const semCourses = JSON.parse(rawData.textContent);
+            const courses = semCourses[sem] || [];
+
+            courses.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.code;
+                opt.dataset.sem = c.sem;
+                opt.textContent = c.code + ' \u2013 ' + c.name;
+                courseSel.appendChild(opt);
+            });
+        }
+
+        function onExportCourseChange() {
+            const sem = document.getElementById('exportSemSelect').value;
+            const code = document.getElementById('exportCourseSelect').value;
+            const btn = document.getElementById('exportSubjectBtn');
+
+            if (sem && code) {
+                btn.classList.remove('disabled');
+                btn.href = `/download_subject_report?sem=${encodeURIComponent(sem)}&code=${encodeURIComponent(code)}`;
+            } else {
+                btn.classList.add('disabled');
+                btn.href = '#';
+            }
+        }
+    </script>
+</body>
+
+</html>
