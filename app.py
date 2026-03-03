@@ -12,7 +12,10 @@ app = Flask(__name__)
 app.secret_key = 'auras_secure_key'
 app.config['UPLOAD_FOLDER']   = os.path.join(BASE_DIR, 'uploads')
 app.config['DOWNLOAD_FOLDER'] = os.path.join(BASE_DIR, 'downloads')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(BASE_DIR, 'results.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DATABASE_URL',
+    'sqlite:///' + os.path.join(BASE_DIR, 'results.db')
+)
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
