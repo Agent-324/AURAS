@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.env
+
+# Database (regenerated from uploads)
+*.db
+
+# Uploaded PDFs & generated downloads
+uploads/
+downloads/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Gemini agent artifacts
+.gemini/
