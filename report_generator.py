@@ -82,13 +82,14 @@ def _auto_col_widths(ws, min_w=8, max_w=40):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def generate_excel_report(results_data, grades_data, students_data,
-                           net_backlogs, output_filepath):
+                           net_backlogs, output_filepath, selected_course_code=None):
     """
     results_data  – list of {register_no, semester, sgpa, backlogs}
     grades_data   – list of {register_no, semester, course_code, course_name, grade}
     students_data – list of {register_no, name}
     net_backlogs  – {register_no: {semester: count}}  from compute_net_backlogs()
     output_filepath – path to write .xlsx
+    selected_course_code – optional course code for subject analysis sheet
     """
     wb = Workbook()
     wb.remove(wb.active)
@@ -119,14 +120,14 @@ def generate_excel_report(results_data, grades_data, students_data,
     ws2 = wb.create_sheet("Backlog Matrix")
     _write_backlog_sheet(ws2, reg_nos, sems_present, net_backlogs, name_map)
 
-    # ── 3. Coursewise Analysis (one sheet per course) ─────────────────────────
-    if not df_grades.empty:
-        for code in df_grades['course_code'].unique():
-            sub = df_grades[df_grades['course_code'] == code]
-            course_name = sub['course_name'].iloc[0] or code
+    # ── 3. Subject Analysis (for selected course only) ────────────────────────
+    if selected_course_code and not df_grades.empty:
+        sub = df_grades[df_grades['course_code'] == selected_course_code]
+        if not sub.empty:
+            course_name = sub['course_name'].iloc[0] or selected_course_code
             sem = sub['semester'].iloc[0]
-            ws_c = wb.create_sheet(title=_safe_sheetname(code))
-            _write_course_sheet(ws_c, code, course_name, sem, sub, name_map=name_map)
+            ws_c = wb.create_sheet(title="Subject Analysis")
+            _write_course_sheet(ws_c, selected_course_code, course_name, sem, sub, name_map=name_map)
 
     if not wb.sheetnames:
         wb.create_sheet("No Data")
@@ -260,6 +261,7 @@ def _write_course_sheet(ws, code, course_name, sem, sub_df, name_map=None):
     # Summary row
     pass_cnt = sum(v for k, v in counts.items() if k not in FAIL_GRADES)
     fail_cnt = total - pass_cnt
+    pass_pct = round(pass_cnt / total * 100, 1) if total else 0
     _val(ws, 'TOTAL',    data_row, 1, fill=SUB_FILL, bold=True, align='center')
     _val(ws, total,      data_row, 2, fill=SUB_FILL, bold=True, align='center')
     _val(ws, '100%',     data_row, 3, fill=SUB_FILL, bold=True, align='center')
@@ -276,19 +278,9 @@ def _write_course_sheet(ws, code, course_name, sem, sub_df, name_map=None):
     gp_sum = sum(GRADE_POINTS.get(row['grade'], 0) for _, row in sub_df.iterrows())
     avg_gp = round(gp_sum / total, 2) if total else 0
 
-    # Pass Rate
-    pass_rate = round(pass_cnt / total * 100, 1) if total else 0
-
     # Quality Index (% ≥ B+)
     quality_cnt = sum(counts.get(g, 0) for g in QUALITY_GRADES)
     quality_idx = round(quality_cnt / total * 100, 1) if total else 0
-
-    # Topper Grade
-    topper_grade = ''
-    for g in GRADE_ORDER:
-        if g in counts:
-            topper_grade = g
-            break
 
     ws.merge_cells(start_row=stats_row, start_column=1,
                    end_row=stats_row,   end_column=6)
@@ -297,9 +289,8 @@ def _write_course_sheet(ws, code, course_name, sem, sub_df, name_map=None):
 
     labels_vals = [
         ('Avg Grade Point', avg_gp),
-        ('Pass Rate',       f'{pass_rate}%'),
+        ('Pass Percentage', f'{pass_pct}%'),
         ('Quality Index (≥B+)', f'{quality_idx}%'),
-        ('Topper Grade',    topper_grade),
     ]
     for k, (lbl, val) in enumerate(labels_vals):
         r = stats_row + 1 + k

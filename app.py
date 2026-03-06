@@ -4,7 +4,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, s
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
 from extract_engine import parse_class_report, compute_net_backlogs
-from report_generator import generate_excel_report, generate_subject_excel_report
+from report_generator import generate_excel_report
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -355,6 +355,9 @@ def subject_analysis():
 @app.route('/download_report')
 @require_class
 def download_report():
+    sem  = request.args.get('sem', '')
+    code = request.args.get('code', '')
+    
     results = (db.session.query(SemesterResult)
                .join(Student)
                .filter(Student.batch_year == current_year(),
@@ -382,45 +385,14 @@ def download_report():
     net_backlogs = compute_net_backlogs(grades_data)
 
     short_year = str(current_year())[-2:]
-    fname = f"AURAS_Report_{class_name()}.xlsx"
+    if code and sem:
+        fname = f"AURAS_Report_{class_name()}_{code}_{sem}.xlsx"
+    else:
+        fname = f"AURAS_Report_{class_name()}.xlsx"
     path  = os.path.join(app.config['DOWNLOAD_FOLDER'], fname)
 
     generate_excel_report(results_data, grades_data, students_data,
-                          net_backlogs, path)
-    return send_file(path, as_attachment=True)
-
-
-# ─── Download single-subject report ──────────────────────────────────────────
-
-@app.route('/download_subject_report')
-@require_class
-def download_subject_report():
-    sem  = request.args.get('sem', '')
-    code = request.args.get('code', '')
-
-    if not sem or not code:
-        return redirect(url_for('index'))
-
-    grades = (db.session.query(CourseGrade)
-              .join(Student)
-              .filter(Student.batch_year == current_year(),
-                      Student.department == current_dept())
-              .all())
-
-    students = (Student.query
-                .filter_by(batch_year=current_year(), department=current_dept())
-                .all())
-
-    grades_data  = [{'register_no': g.register_no, 'semester': g.semester,
-                     'course_code': g.course_code, 'course_name': g.course_name,
-                     'grade': g.grade} for g in grades]
-    students_data = [{'register_no': s.register_no, 'name': s.name}
-                     for s in students]
-
-    fname = f"AURAS_{class_name()}_{code}_{sem}.xlsx"
-    path  = os.path.join(app.config['DOWNLOAD_FOLDER'], fname)
-
-    generate_subject_excel_report(grades_data, students_data, path, code, sem)
+                          net_backlogs, path, selected_course_code=code if code else None)
     return send_file(path, as_attachment=True)
 
 
