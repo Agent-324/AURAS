@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management - AURAS</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --navy: #1f3864;
+            --blue: #2e75b6;
+            --light-blue: #ebf3fb;
+            --line: #dbe5f0;
+            --text-soft: #607187;
+        }
+        body {
+            background: #f4f7fc;
+            font-family: "Segoe UI", sans-serif;
+        }
+        .navbar {
+            background: var(--navy) !important;
+        }
+        .card {
+            border: none;
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+        }
+        .card-header {
+            background: var(--navy);
+            color: #fff;
+            font-weight: 700;
+            border-radius: 14px 14px 0 0 !important;
+        }
+        .section-subtitle {
+            color: #6c757d;
+            font-size: 0.92rem;
+        }
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        .search-form {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+        .search-form .form-control {
+            min-width: 220px;
+            flex: 1;
+        }
+        .result-summary {
+            color: var(--text-soft);
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+        .accordion-wrap {
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            overflow: hidden;
+            background: #fff;
+        }
+        .accordion-item {
+            border: 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .accordion-item:last-child {
+            border-bottom: 0;
+        }
+        .accordion-button {
+            background: #fff;
+            box-shadow: none;
+            padding: 0.9rem 1rem;
+        }
+        .accordion-button:not(.collapsed) {
+            background: #f8fbff;
+            color: inherit;
+            box-shadow: none;
+        }
+        .accordion-button:focus {
+            box-shadow: none;
+            border-color: transparent;
+        }
+        .row-summary {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.85rem;
+            width: calc(100% - 1.5rem);
+        }
+        .user-title {
+            min-width: 0;
+        }
+        .user-name {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #18263f;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .user-sub {
+            color: var(--text-soft);
+            font-size: 0.82rem;
+            margin-top: 0.12rem;
+        }
+        .summary-badges {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 0.45rem;
+            flex-wrap: wrap;
+        }
+        .role-pill,
+        .meta-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            padding: 0.3rem 0.62rem;
+            font-size: 0.78rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .meta-pill {
+            background: #eef4fb;
+            color: #50637c;
+        }
+        .current-pill {
+            background: #e8f4ea;
+            color: #2f6b3a;
+        }
+        .accordion-body {
+            padding: 0.9rem 1rem 1rem;
+            background: #fbfdff;
+        }
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-areas:
+                "update update"
+                "reset delete";
+            gap: 0.75rem;
+        }
+        .action-panel {
+            background: #fff;
+            border: 1px solid #e3ebf5;
+            border-radius: 10px;
+            padding: 0.75rem 0.8rem;
+        }
+        .action-panel.danger {
+            border-color: #f0ccd0;
+            background: #fffafb;
+        }
+        .update-panel {
+            grid-area: update;
+        }
+        .reset-panel {
+            grid-area: reset;
+        }
+        .delete-panel {
+            grid-area: delete;
+        }
+        .panel-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #5b6c84;
+            font-weight: 700;
+            margin-bottom: 0.55rem;
+        }
+        .danger .panel-label {
+            color: #b74e59;
+        }
+        .action-row {
+            display: grid;
+            gap: 0.5rem;
+        }
+        .action-row.update-row {
+            grid-template-columns: minmax(0, 1.3fr) minmax(96px, 0.9fr) auto;
+        }
+        .action-row.reset-row {
+            grid-template-columns: minmax(0, 1fr) auto;
+        }
+        .panel-help {
+            color: #76869b;
+            font-size: 0.77rem;
+            margin-top: 0.45rem;
+            line-height: 1.35;
+        }
+        .pagination-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+        .empty-state {
+            padding: 2rem 1rem;
+            text-align: center;
+            color: #6b7787;
+            background: #f8fbff;
+            border: 1px dashed #c9d8ea;
+            border-radius: 16px;
+        }
+        @media (max-width: 991px) {
+            .action-grid {
+                grid-template-columns: 1fr;
+                grid-template-areas:
+                    "update"
+                    "reset"
+                    "delete";
+            }
+            .summary-badges {
+                justify-content: flex-start;
+            }
+        }
+        @media (max-width: 767px) {
+            .search-form {
+                width: 100%;
+            }
+            .search-form .form-control {
+                min-width: 0;
+                width: 100%;
+            }
+            .row-summary {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+            }
+            .summary-badges {
+                justify-content: flex-start;
+            }
+            .action-row.update-row,
+            .action-row.reset-row {
+                grid-template-columns: 1fr;
+            }
+            .pagination-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark mb-4 shadow-sm">
+        <div class="container-xl d-flex align-items-center justify-content-between">
+            <a class="navbar-brand d-flex align-items-center gap-2" href="/select_class">
+                <img src="/static/logo.png" height="32" alt="">
+                <span class="fw-bold fs-5">AURAS</span>
+                <span class="badge bg-primary">User Management</span>
+            </a>
+            <div class="d-flex gap-2 align-items-center">
+                <span class="text-white-50 small d-none d-md-inline">Signed in as {{ username }}</span>
+                <a href="/select_class" class="btn btn-outline-info btn-sm">Class Selection</a>
+                <a href="/logout" class="btn btn-outline-light btn-sm">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-xl pb-5">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="mb-3">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ 'warning' if category == 'message' else category }} alert-dismissible fade show mb-2" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <div class="row g-4">
+            <div class="col-12 col-xl-4">
+                <div class="card">
+                    <div class="card-header">Create User</div>
+                    <div class="card-body">
+                        <form action="/users/create" method="POST">
+                            <input type="hidden" name="q" value="{{ search_query }}">
+                            <input type="hidden" name="page" value="{{ page }}">
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Username</label>
+                                <input type="text" name="username" class="form-control" placeholder="faculty1" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Role</label>
+                                <select name="role" class="form-select" required>
+                                    <option value="faculty">Faculty</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-semibold">Initial Password</label>
+                                <input type="password" name="password" class="form-control" minlength="8" required>
+                                <div class="form-text">Passwords must be at least 8 characters long.</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">Create User</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-8">
+                <div class="card">
+                    <div class="card-header">Existing Users</div>
+                    <div class="card-body">
+                        <div class="toolbar">
+                            <form action="/users" method="GET" class="search-form">
+                                <input type="text" name="q" class="form-control" placeholder="Search by username" value="{{ search_query }}">
+                                <button type="submit" class="btn btn-outline-primary">Search</button>
+                                {% if search_query %}
+                                <a href="/users" class="btn btn-outline-secondary">Clear</a>
+                                {% endif %}
+                            </form>
+                            <div class="result-summary">
+                                {% if filtered_count %}
+                                Showing {{ start_index }}-{{ end_index }} of {{ filtered_count }} matching users
+                                {% else %}
+                                No matching users
+                                {% endif %}
+                                {% if search_query %}
+                                <span class="d-inline-block ms-1">for "{{ search_query }}"</span>
+                                {% elif total_users %}
+                                <span class="d-inline-block ms-1">from {{ total_users }} total</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if users %}
+                        <div class="accordion-wrap">
+                            <div class="accordion accordion-flush" id="usersAccordion">
+                                {% for user in users %}
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="heading-{{ user.id }}">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-{{ user.id }}" aria-expanded="false" aria-controls="collapse-{{ user.id }}">
+                                            <div class="row-summary">
+                                                <div class="user-title">
+                                                    <div class="user-name">{{ user.username }}</div>
+                                                    <div class="user-sub">Created {{ user.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                                                </div>
+                                                <div class="summary-badges">
+                                                    <span class="badge role-pill {{ 'bg-danger' if user.role == 'admin' else 'bg-secondary' }}">
+                                                        {{ user.role }}
+                                                    </span>
+                                                    {% if username == user.username %}
+                                                    <span class="meta-pill current-pill">Current session</span>
+                                                    {% endif %}
+                                                    <span class="meta-pill">ID {{ user.id }}</span>
+                                                </div>
+                                            </div>
+                                        </button>
+                                    </h2>
+                                    <div id="collapse-{{ user.id }}" class="accordion-collapse collapse" aria-labelledby="heading-{{ user.id }}" data-bs-parent="#usersAccordion">
+                                        <div class="accordion-body">
+                                            <div class="action-grid">
+                                                <div class="action-panel update-panel">
+                                                    <div class="panel-label">Update User</div>
+                                                    <form action="/users/{{ user.id }}/update" method="POST">
+                                                        <input type="hidden" name="q" value="{{ search_query }}">
+                                                        <input type="hidden" name="page" value="{{ page }}">
+                                                        <div class="action-row update-row">
+                                                            <input type="text" name="username" class="form-control form-control-sm" value="{{ user.username }}" required>
+                                                            <select name="role" class="form-select form-select-sm" required>
+                                                                <option value="faculty" {{ 'selected' if user.role == 'faculty' else '' }}>Faculty</option>
+                                                                <option value="admin" {{ 'selected' if user.role == 'admin' else '' }}>Admin</option>
+                                                            </select>
+                                                            <button type="submit" class="btn btn-outline-primary btn-sm px-3">Save</button>
+                                                        </div>
+                                                    </form>
+                                                    <div class="panel-help">Edit the username or switch the access role.</div>
+                                                </div>
+
+                                                <div class="action-panel reset-panel">
+                                                    <div class="panel-label">Reset Password</div>
+                                                    <form action="/users/{{ user.id }}/reset_password" method="POST">
+                                                        <input type="hidden" name="q" value="{{ search_query }}">
+                                                        <input type="hidden" name="page" value="{{ page }}">
+                                                        <div class="action-row reset-row">
+                                                            <input type="password" name="password" class="form-control form-control-sm" minlength="8" placeholder="Enter new password" required>
+                                                            <button type="submit" class="btn btn-outline-warning btn-sm px-3">Reset</button>
+                                                        </div>
+                                                    </form>
+                                                    <div class="panel-help">Passwords stay hidden and hash-protected.</div>
+                                                </div>
+
+                                                <div class="action-panel danger delete-panel">
+                                                    <div class="panel-label">Delete</div>
+                                                    <form action="/users/{{ user.id }}/delete" method="POST" onsubmit="return confirm('Delete user {{ user.username }}?');">
+                                                        <input type="hidden" name="q" value="{{ search_query }}">
+                                                        <input type="hidden" name="page" value="{{ page }}">
+                                                        <button type="submit" class="btn btn-outline-danger btn-sm w-100">Delete User</button>
+                                                    </form>
+                                                    <div class="panel-help">Current-session and last-admin protections still apply.</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="empty-state">
+                            <div class="fw-semibold mb-1">No users found</div>
+                            <div>{% if search_query %}Try a different search term or clear the filter.{% else %}Create the first account from the panel on the left.{% endif %}</div>
+                        </div>
+                        {% endif %}
+
+                        {% if total_pages > 1 %}
+                        <div class="pagination-bar">
+                            <div class="result-summary">Page {{ page }} of {{ total_pages }}</div>
+                            <div class="d-flex gap-2">
+                                <a href="{{ url_for('manage_users', q=search_query or None, page=page - 1) }}"
+                                   class="btn btn-outline-secondary btn-sm {{ 'disabled' if page <= 1 else '' }}"
+                                   aria-disabled="{{ 'true' if page <= 1 else 'false' }}">
+                                    Previous
+                                </a>
+                                <a href="{{ url_for('manage_users', q=search_query or None, page=page + 1) }}"
+                                   class="btn btn-outline-secondary btn-sm {{ 'disabled' if page >= total_pages else '' }}"
+                                   aria-disabled="{{ 'true' if page >= total_pages else 'false' }}">
+                                    Next
+                                </a>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -372,7 +372,11 @@
                 <span class="fw-bold fs-5">AURAS</span>
                 <span class="badge-class ms-1">{{ class_name }}</span>
             </a>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 align-items-center">
+                <span class="text-white-50 small d-none d-md-inline">Signed in as {{ username }}</span>
+                {% if role == 'admin' %}
+                <a href="/users" class="btn btn-outline-warning btn-sm">Users</a>
+                {% endif %}
                 <a href="/select_class" class="btn btn-outline-info btn-sm">Switch Class</a>
                 <a href="/logout" class="btn btn-outline-light btn-sm">Logout</a>
             </div>
@@ -381,13 +385,18 @@
 
     <div class="container-xl pb-5">
 
-        <!-- ══ Flash message ══ -->
-        {% if session.get('upload_msg') %}
-        <div class="alert alert-info alert-dismissible fade show mb-3" role="alert">
-            {{ session.pop('upload_msg') }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="mb-3">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ 'warning' if category == 'message' else category }} alert-dismissible fade show mb-2" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
         </div>
         {% endif %}
+        {% endwith %}
 
         <!-- ══ Top row: Upload + Export ══════════════════════════════════════════ -->
         <div class="row g-3 mb-4">

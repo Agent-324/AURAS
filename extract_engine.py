@@ -1,4 +1,3 @@
-import pdfplumber
 import re
 
 FAIL_GRADES = {'F', 'FE', 'I', 'LP'}
@@ -25,6 +24,11 @@ def parse_class_report(pdf_path):
     students = []
     course_col_map = {} # column-index -> course_code  (set from first table that has header)
     sgpa_idx = cgpa_idx = earned_idx = None
+
+    try:
+        import pdfplumber
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("pdfplumber is required to parse uploaded PDF reports.") from exc
 
     with pdfplumber.open(pdf_path) as pdf:
         full_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)

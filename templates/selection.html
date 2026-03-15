@@ -14,27 +14,48 @@
         }
     </style>
 </head>
-<body class="bg-light d-flex align-items-center" style="height: 100vh;">
-    <div class="container card shadow p-4" style="max-width: 400px; border-radius: 15px;">
-        
-        <div class="text-center mb-4">
-            <img src="/static/logo.png" alt="AURAS Logo" class="brand-logo">
-            <h3 class="fw-bold mb-0">Class Selection</h3>
+<body class="bg-light">
+    <div class="container py-4">
+        <div class="d-flex justify-content-end gap-2 mb-3">
+            {% if role == 'admin' %}
+            <a href="/users" class="btn btn-outline-primary btn-sm">Users</a>
+            {% endif %}
+            <a href="/logout" class="btn btn-outline-secondary btn-sm">Logout</a>
         </div>
 
-        <form action="/select_class" method="POST">
-            <label class="form-label fw-bold">Joining Year</label>
-            <select name="year" class="form-select mb-3" required>
-                {% for y in years %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
-            </select>
-            
-            <label class="form-label fw-bold">Department</label>
-            <select name="dept" class="form-select mb-4" required>
-                {% for d in depts %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
-            </select>
-            
-            <button type="submit" class="btn btn-primary w-100 fw-bold py-2">Open Database</button>
-        </form>
+        <div class="container card shadow p-4" style="max-width: 430px; border-radius: 15px;">
+            <div class="text-center mb-4">
+                <img src="/static/logo.png" alt="AURAS Logo" class="brand-logo">
+                <h3 class="fw-bold mb-0">Class Selection</h3>
+                <p class="text-muted small mb-0">Logged in as {{ username }}</p>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="mb-3">
+                {% for category, message in messages %}
+                <div class="alert alert-{{ 'warning' if category == 'message' else category }} mb-2" role="alert">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+
+            <form action="/select_class" method="POST">
+                <label class="form-label fw-bold">Joining Year</label>
+                <select name="year" class="form-select mb-3" required>
+                    {% for y in years %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
+                </select>
+
+                <label class="form-label fw-bold">Department</label>
+                <select name="dept" class="form-select mb-4" required>
+                    {% for d in depts %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+                </select>
+
+                <button type="submit" class="btn btn-primary w-100 fw-bold py-2">Open Database</button>
+            </form>
+        </div>
     </div>
 </body>
 </html>
