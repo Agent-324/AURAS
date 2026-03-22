@@ -18,7 +18,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from extract_engine import compute_net_backlogs, parse_class_report
-from report_generator import generate_excel_report
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 MIN_PASSWORD_LENGTH = 8
@@ -140,8 +139,10 @@ def bootstrap_admin():
 
 
 with app.app_context():
-    db.create_all()
-    bootstrap_admin()
+    auto_init_db = os.environ.get("AURAS_AUTO_INIT_DB", "true").strip().lower() in {"1", "true", "yes", "on"}
+    if auto_init_db:
+        db.create_all()
+        bootstrap_admin()
 
 
 SEMS = [f"S{i}" for i in range(1, 9)]
@@ -682,6 +683,9 @@ def subject_analysis():
 @app.route("/download_report")
 @require_class
 def download_report():
+    # Lazy import to keep app cold-start lighter on Render.
+    from report_generator import generate_excel_report
+
     sem = request.args.get("sem", "")
     code = request.args.get("code", "")
 
@@ -756,4 +760,5 @@ def clear_database():
 if __name__ == "__main__":
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
-    app.run(debug=True)
+    debug_mode = os.environ.get("FLASK_DEBUG", "0").strip() in {"1", "true", "True"}
+    app.run(debug=debug_mode)
