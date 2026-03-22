@@ -757,6 +757,12 @@ def clear_database():
     return redirect(url_for("index"))
 
 
+@app.route("/health")
+def health_check():
+    """A lightweight endpoint for Render's free tier health checks and pings."""
+    return "OK", 200
+
+
 if __name__ == "__main__":
     os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
     os.makedirs(app.config["DOWNLOAD_FOLDER"], exist_ok=True)
