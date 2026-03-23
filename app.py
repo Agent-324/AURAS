@@ -680,6 +680,82 @@ def subject_analysis():
     )
 
 
+@app.route("/api/semester_analysis")
+@require_class
+def semester_analysis():
+    """Return grade analysis for every subject in a given semester."""
+    sem = request.args.get("sem", "")
+    if not sem:
+        return jsonify({"error": "sem parameter is required"}), 400
+
+    courses = Course.query.filter_by(
+        batch_year=current_year(),
+        department=current_dept(),
+        semester=sem,
+    ).all()
+
+    from collections import Counter
+
+    grade_order = ["S", "A+", "A", "B+", "B", "C+", "C", "D", "P", "F", "FE", "LP", "I"]
+    fail_grades = {"F", "FE", "LP", "I"}
+    grade_points = {"S": 10, "A+": 9, "A": 8.5, "B+": 8, "B": 7, "C+": 6, "C": 5, "D": 4, "P": 3,
+                    "F": 0, "FE": 0, "LP": 0, "I": 0}
+    quality_grades = {"S", "A+", "A", "B+"}
+
+    results = []
+    for course in courses:
+        rows = (
+            CourseGrade.query.join(Student)
+            .filter(
+                Student.batch_year == current_year(),
+                Student.department == current_dept(),
+                CourseGrade.course_code == course.code,
+                CourseGrade.semester == sem,
+            )
+            .all()
+        )
+        if not rows:
+            continue
+
+        counts = Counter(row.grade for row in rows)
+        distribution = []
+        for grade in grade_order:
+            if grade in counts:
+                distribution.append({"grade": grade, "count": counts[grade], "fail": grade in fail_grades})
+        for grade, count in counts.items():
+            if grade not in grade_order:
+                distribution.append({"grade": grade, "count": count, "fail": False})
+
+        total = len(rows)
+        grade_points_sum = sum(grade_points.get(row.grade, 0) for row in rows)
+        avg_grade_point = round(grade_points_sum / total, 2) if total else 0
+
+        topper_grade = ""
+        topper_count = 0
+        for grade in grade_order:
+            if grade in counts:
+                topper_grade = grade
+                topper_count = counts[grade]
+                break
+
+        quality_count = sum(counts.get(grade, 0) for grade in quality_grades)
+        quality_index = round(quality_count / total * 100, 1) if total else 0
+
+        results.append({
+            "code": course.code,
+            "name": course.name,
+            "semester": sem,
+            "distribution": distribution,
+            "total": total,
+            "avg_grade_point": avg_grade_point,
+            "topper_grade": topper_grade,
+            "topper_count": topper_count,
+            "quality_index": quality_index,
+        })
+
+    return jsonify(results)
+
+
 @app.route("/download_report")
 @require_class
 def download_report():
@@ -723,11 +799,17 @@ def download_report():
 
     if code and sem:
         filename = f"AURAS_Report_{class_name()}_{code}_{sem}.xlsx"
+    elif sem:
+        filename = f"AURAS_Report_{class_name()}_{sem}_AllSubjects.xlsx"
     else:
         filename = f"AURAS_Report_{class_name()}.xlsx"
     path = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
 
-    generate_excel_report(results_data, grades_data, students_data, net_backlogs, path, selected_course_code=code if code else None)
+    generate_excel_report(
+        results_data, grades_data, students_data, net_backlogs, path,
+        selected_course_code=code if code else None,
+        selected_semester=sem if sem and not code else None,
+    )
     return send_file(path, as_attachment=True)
 
 
