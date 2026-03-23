@@ -82,14 +82,17 @@ def _auto_col_widths(ws, min_w=8, max_w=40):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def generate_excel_report(results_data, grades_data, students_data,
-                           net_backlogs, output_filepath, selected_course_code=None):
+                           net_backlogs, output_filepath, selected_course_code=None,
+                           selected_semester=None):
     """
     results_data  – list of {register_no, semester, sgpa, backlogs}
     grades_data   – list of {register_no, semester, course_code, course_name, grade}
     students_data – list of {register_no, name}
     net_backlogs  – {register_no: {semester: count}}  from compute_net_backlogs()
     output_filepath – path to write .xlsx
-    selected_course_code – optional course code for subject analysis sheet
+    selected_course_code – optional course code for a single subject analysis sheet
+    selected_semester    – optional semester; when provided (without selected_course_code),
+                           creates one analysis sheet per subject in that semester
     """
     wb = Workbook()
     wb.remove(wb.active)
@@ -120,14 +123,27 @@ def generate_excel_report(results_data, grades_data, students_data,
     ws2 = wb.create_sheet("Backlog Matrix")
     _write_backlog_sheet(ws2, reg_nos, sems_present, net_backlogs, name_map)
 
-    # ── 3. Subject Analysis (for selected course only) ────────────────────────
+    # ── 3. Subject Analysis ───────────────────────────────────────────────────
     if selected_course_code and not df_grades.empty:
+        # Single subject
         sub = df_grades[df_grades['course_code'] == selected_course_code]
         if not sub.empty:
             course_name = sub['course_name'].iloc[0] or selected_course_code
             sem = sub['semester'].iloc[0]
             ws_c = wb.create_sheet(title="Subject Analysis")
             _write_course_sheet(ws_c, selected_course_code, course_name, sem, sub, name_map=name_map)
+    elif selected_semester and not df_grades.empty:
+        # All subjects in the chosen semester – one sheet per course
+        sem_grades = df_grades[df_grades['semester'] == selected_semester]
+        course_codes = sem_grades['course_code'].unique()
+        for code in course_codes:
+            sub = sem_grades[sem_grades['course_code'] == code]
+            if sub.empty:
+                continue
+            course_name = sub['course_name'].iloc[0] or code
+            sheet_title = _safe_sheetname(code)
+            ws_c = wb.create_sheet(title=sheet_title)
+            _write_course_sheet(ws_c, code, course_name, selected_semester, sub, name_map=name_map)
 
     if not wb.sheetnames:
         wb.create_sheet("No Data")

@@ -473,9 +473,10 @@
                         <a id="exportReportBtn" href="/download_report" class="btn btn-success fw-bold py-2 w-100">
                             📊 Download Excel Report
                         </a>
-                        <p class="text-muted small mt-2 mb-0">
-                            <strong>Tip:</strong> Leave subject blank for SGPA & backlog matrices only, 
-                            or select a subject to include detailed analysis.
+                        <p class="text-muted small mb-0">
+                            <strong>Tip:</strong> Leave subject blank to download SGPA &amp; backlogs plus 
+                            all subject analyses for the selected semester. Select a specific subject for that 
+                            subject's analysis only. Leave both blank for SGPA &amp; backlogs only.
                         </p>
                     </div>
                 </div>
@@ -699,7 +700,7 @@
                     </div>
 
                     <!-- Step 2: Subject (populated by JS) -->
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 col-md-5">
                         <div class="d-flex align-items-center gap-2 mb-1">
                             <span id="step2Badge"
                                 style="background:#adb5bd;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;transition:background .2s;">2</span>
@@ -708,6 +709,13 @@
                         <select id="courseSelect" class="form-select" onchange="loadSubjectAnalysis()" disabled>
                             <option value="">— Select a semester first —</option>
                         </select>
+                    </div>
+
+                    <!-- View All button -->
+                    <div class="col-12 col-md-auto d-flex align-items-end">
+                        <button id="viewAllBtn" class="btn btn-outline-primary fw-semibold" onclick="loadAllSubjectsAnalysis()" disabled>
+                            📋 View All Subjects
+                        </button>
                     </div>
 
                 </div>
@@ -775,6 +783,7 @@
             const panel = document.getElementById('subjectAnalysisPanel');
             const badge = document.getElementById('step2Badge');
             const lbl = document.getElementById('step2Label');
+            const viewAllBtn = document.getElementById('viewAllBtn');
 
             courseSel.innerHTML = '<option value="">— Select Subject —</option>';
             courseSel.disabled = !sem;
@@ -783,9 +792,12 @@
             badge.style.background = sem ? 'var(--navy)' : '#adb5bd';
             lbl.textContent = sem ? `Select Subject  ·  Semester ${sem}` : 'Select Subject';
 
+            // Enable/disable "View All" button
+            viewAllBtn.disabled = !sem;
+
             panel.innerHTML = sem
                 ? `<div class="text-center py-5 text-muted"><div class="fs-1">📚</div>
-           <p class="mb-0">Now select a subject for <strong>Semester ${sem}</strong>.</p></div>`
+           <p class="mb-0">Now select a subject for <strong>Semester ${sem}</strong>, or click <strong>View All Subjects</strong>.</p></div>`
                 : `<div class="text-center py-5 text-muted"><div class="fs-1">🎓</div>
            <p class="mb-0">Select a semester and subject to view grade analysis.</p></div>`;
 
@@ -822,6 +834,93 @@
             } catch (e) {
                 panel.innerHTML = '<div class="alert alert-danger">Failed to load data.</div>';
             }
+        }
+
+        // Load and render all subjects for the selected semester
+        async function loadAllSubjectsAnalysis() {
+            const sem = document.getElementById('semSelect').value;
+            const panel = document.getElementById('subjectAnalysisPanel');
+
+            if (!sem) return;
+
+            // Reset individual subject select so it doesn't appear "selected"
+            const courseSel = document.getElementById('courseSelect');
+            courseSel.value = '';
+
+            panel.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted small">Loading all subjects…</p></div>';
+
+            try {
+                const res = await fetch(`/api/semester_analysis?sem=${encodeURIComponent(sem)}`);
+                const subjects = await res.json();
+                renderAllSubjectsAnalysis(subjects, sem, panel);
+            } catch (e) {
+                panel.innerHTML = '<div class="alert alert-danger">Failed to load semester data.</div>';
+            }
+        }
+
+        function renderAllSubjectsAnalysis(subjects, sem, panel) {
+            if (!subjects || subjects.length === 0) {
+                panel.innerHTML = '<div class="text-muted text-center py-4">No grade data available for this semester.</div>';
+                return;
+            }
+
+            const gradeColorMap = {
+                'S': '#1B9E3E', 'A+': '#27AE60', 'A': '#2ECC71', 'B+': '#2E86C1',
+                'B': '#3498DB', 'C+': '#AF7AC5', 'C': '#F39C12', 'D': '#E67E22',
+                'P': '#F1C40F', 'F': '#E74C3C', 'FE': '#C0392B',
+            };
+            const fallbackColors = ['#1ABC9C', '#8E44AD', '#D35400', '#16A085', '#7F8C8D'];
+
+            let html = `<h6 class="fw-bold mb-3">All Subjects — Semester ${sem} <span class="badge bg-secondary ms-1">${subjects.length} courses</span></h6>`;
+            html += `<div class="row g-3">`;
+
+            subjects.forEach(data => {
+                const total = data.total;
+                const passCnt = data.distribution.filter(d => !d.fail).reduce((s, d) => s + d.count, 0);
+                const failCnt = total - passCnt;
+                const passRate = total ? Math.round(passCnt / total * 100) : 0;
+                const passColor = passRate >= 80 ? '#1B9E3E' : passRate >= 60 ? '#F39C12' : '#E74C3C';
+                const maxCount = Math.max(...data.distribution.map(d => d.count), 1);
+
+                const barsHtml = data.distribution.map((d, idx) => {
+                    const pct = total ? (d.count / total * 100).toFixed(1) : 0;
+                    const barWidth = (d.count / maxCount * 100).toFixed(1);
+                    const barColor = gradeColorMap[d.grade] || (d.fail ? '#E74C3C' : fallbackColors[idx % fallbackColors.length]);
+                    return `<div class="grade-bar">
+                        <span class="grade-label ${d.fail ? 'fail' : 'pass'}-label">${d.grade}</span>
+                        <div class="grade-track">
+                            <div class="grade-fill" style="width:${Math.max(parseFloat(barWidth), 4)}%;background:${barColor}">${pct}%</div>
+                        </div>
+                        <span class="grade-count">${d.count}</span>
+                    </div>`;
+                }).join('');
+
+                html += `
+                <div class="col-12 col-md-6">
+                    <div class="card h-100">
+                        <div class="card-body py-3 px-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <div>
+                                    <span class="fw-bold small">${data.code}</span>
+                                    <div class="text-muted" style="font-size:.8rem;">${data.name}</div>
+                                </div>
+                                <span class="fw-bold ms-2" style="color:${passColor};font-size:1.1rem;white-space:nowrap;">${passRate}%</span>
+                            </div>
+                            <div class="d-flex gap-2 mb-2" style="font-size:.78rem;">
+                                <span class="text-muted">Total: <strong>${total}</strong></span>
+                                <span class="text-success">Pass: <strong>${passCnt}</strong></span>
+                                <span class="text-danger">Fail: <strong>${failCnt}</strong></span>
+                                <span style="color:#8E44AD;">QI: <strong>${data.quality_index}%</strong></span>
+                                <span style="color:#2E75B6;">Avg GP: <strong>${data.avg_grade_point}</strong></span>
+                            </div>
+                            <div class="grade-bar-wrap" style="font-size:.82rem;">${barsHtml}</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            html += `</div>`;
+            panel.innerHTML = html;
         }
 
         function renderSubjectAnalysis(data, panel) {
@@ -983,9 +1082,10 @@
             const sem = document.getElementById('exportSemSelect').value;
             const courseSel = document.getElementById('exportCourseSelect');
             const badge = document.getElementById('exportStep2Badge');
-            const btn = document.getElementById('exportReportBtn');
 
-            courseSel.innerHTML = '<option value="">— No Subject (SGPA & Backlogs only) —</option>';
+            courseSel.innerHTML = sem
+                ? '<option value="">— All Subjects in Semester —</option>'
+                : '<option value="">— No Subject (SGPA & Backlogs only) —</option>';
             courseSel.disabled = !sem;
             badge.style.background = sem ? 'var(--blue)' : '#adb5bd';
             
@@ -1019,8 +1119,10 @@
             let url = '/download_report';
             const params = [];
             
-            if (sem && code) {
+            if (sem) {
                 params.push(`sem=${encodeURIComponent(sem)}`);
+            }
+            if (code) {
                 params.push(`code=${encodeURIComponent(code)}`);
             }
             
