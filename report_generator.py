@@ -1,6 +1,10 @@
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.chart import PieChart, BarChart, Reference
+try:
+    from openpyxl.chart.label import DataLabelList
+except ImportError:  # Older openpyxl builds
+    DataLabelList = None
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import (Font, PatternFill, Alignment, Border, Side,
                               GradientFill)
@@ -77,6 +81,12 @@ def _auto_col_widths(ws, min_w=8, max_w=40):
         )
         ws.column_dimensions[get_column_letter(col[0].column)].width = \
             min(max_w, max(min_w, width + 2))
+
+
+def _sem_key(sem):
+    if isinstance(sem, str) and sem.startswith('S') and sem[1:].isdigit():
+        return int(sem[1:])
+    return 999
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -379,6 +389,199 @@ def generate_subject_excel_report(grades_data, students_data, output_filepath,
             ws = wb.create_sheet(title=_safe_sheetname(course_code))
             _write_course_sheet(ws, course_code, course_name, semester, sub,
                                 name_map=name_map)
+
+    if not wb.sheetnames:
+        wb.create_sheet("No Data")
+
+    wb.save(output_filepath)
+
+
+def generate_all_subjects_excel_report(grades_data, students_data, courses_data,
+                                        semester, output_filepath,
+                                        results_data=None, net_backlogs=None):
+    """
+    Generate an Excel report with a sheet for EACH subject in the semester,
+    plus an overview summary sheet.
+
+    Parameters:
+        grades_data   – list of {register_no, semester, course_code, course_name, grade}
+        students_data – list of {register_no, name}
+        courses_data  – list of {code, name}
+        semester      – e.g. 'S5'
+        output_filepath – path to write .xlsx
+    """
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    name_map = {s['register_no']: s['name'] for s in students_data}
+    df_grades = pd.DataFrame(grades_data)
+
+    if df_grades.empty:
+        wb.create_sheet("No Data")
+        wb.save(output_filepath)
+        return
+
+    QUALITY_GRADES = {'S', 'A+', 'A', 'B+'}
+    GRADE_PTS = {'S': 10, 'A+': 9, 'A': 8.5, 'B+': 8, 'B': 7,
+                 'C+': 6, 'C': 5, 'D': 4, 'P': 3,
+                 'F': 0, 'FE': 0, 'LP': 0, 'I': 0, 'Absent': 0}
+
+    summary_rows = []   # for the overview sheet
+
+    for course in sorted(courses_data, key=lambda c: c['code']):
+        code = course['code']
+        c_name = course['name'] or code
+
+        sub = df_grades[(df_grades['course_code'] == code) &
+                        (df_grades['semester'] == semester)]
+        if sub.empty:
+            continue
+
+        # Write per-subject sheet
+        ws = wb.create_sheet(title=_safe_sheetname(code))
+        _write_course_sheet(ws, code, c_name, semester, sub, name_map=name_map)
+
+        # Build summary row
+        counts = Counter(sub['grade'])
+        total = len(sub)
+        pass_cnt = sum(v for k, v in counts.items() if k not in FAIL_GRADES)
+        fail_cnt = total - pass_cnt
+        pass_pct = round(pass_cnt / total * 100, 1) if total else 0
+        gp_sum = sum(GRADE_PTS.get(row['grade'], 0) for _, row in sub.iterrows())
+        avg_gp = round(gp_sum / total, 2) if total else 0
+        quality_cnt = sum(counts.get(g, 0) for g in QUALITY_GRADES)
+        quality_idx = round(quality_cnt / total * 100, 1) if total else 0
+
+        summary_rows.append({
+            'code': code,
+            'name': c_name,
+            'total': total,
+            'pass_cnt': pass_cnt,
+            'fail_cnt': fail_cnt,
+            'pass_pct': pass_pct,
+            'avg_gp': avg_gp,
+            'quality_idx': quality_idx,
+        })
+
+    # ── Overview Sheet ────────────────────────────────────────────────────────
+    if summary_rows:
+        ws_ov = wb.create_sheet(title="Overview", index=0)  # first sheet
+        ws_ov.freeze_panes = 'A3'
+
+        ws_ov.merge_cells(start_row=1, start_column=1,
+                          end_row=1, end_column=8)
+        cell = ws_ov.cell(1, 1, f'All Subjects – Semester {semester}')
+        cell.font = Font(bold=True, size=14, color="FFFFFF")
+        cell.fill = HDR_FILL
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        ws_ov.row_dimensions[1].height = 26
+
+        headers = ['Course Code', 'Course Name', 'Total', 'Passed', 'Failed',
+                   'Pass %', 'Avg GP', 'Quality Index (≥B+)']
+        for j, h in enumerate(headers, 1):
+            _hdr(ws_ov, h, 2, j, fill=SUB_FILL)
+        ws_ov.row_dimensions[2].height = 20
+
+        for i, r in enumerate(summary_rows, start=1):
+            row_num = i + 2
+            base = ALT_FILL if i % 2 == 0 else None
+            _val(ws_ov, r['code'],        row_num, 1, fill=base, bold=True, align='left')
+            _val(ws_ov, r['name'],        row_num, 2, fill=base, align='left')
+            _val(ws_ov, r['total'],       row_num, 3, fill=base)
+            _val(ws_ov, r['pass_cnt'],    row_num, 4,
+                 fill=GOOD_FILL if r['pass_pct'] >= 80 else base)
+            _val(ws_ov, r['fail_cnt'],    row_num, 5,
+                 fill=FAIL_FILL if r['fail_cnt'] > r['total'] * 0.3 else base)
+            _val(ws_ov, f"{r['pass_pct']}%", row_num, 6, fill=base, bold=True)
+            _val(ws_ov, r['avg_gp'],      row_num, 7, fill=base, num_fmt='0.00')
+            _val(ws_ov, f"{r['quality_idx']}%", row_num, 8, fill=base)
+
+        _auto_col_widths(ws_ov)
+        ws_ov.column_dimensions['B'].width = 36
+
+        # ── Summary Bar Chart (screenshot-style: one PASSED category) ────
+        if len(summary_rows) > 0:
+            chart_tbl_col = 10  # J
+            chart_tbl_row = len(summary_rows) + 5
+
+            # Build helper table:
+            # Row 1 -> subject codes (series names)
+            # Row 2 -> passed counts with a single category label "PASSED"
+            ws_ov.cell(row=chart_tbl_row, column=chart_tbl_col, value='')
+            for idx, r in enumerate(summary_rows, start=1):
+                ws_ov.cell(row=chart_tbl_row, column=chart_tbl_col + idx, value=r['code'])
+                ws_ov.cell(row=chart_tbl_row + 1, column=chart_tbl_col + idx, value=r['pass_cnt'])
+            ws_ov.cell(row=chart_tbl_row + 1, column=chart_tbl_col, value='PASSED')
+
+            bar = BarChart()
+            bar.title = "Chart Title"
+            bar.type = "bar"
+            bar.style = 10
+            bar.width = 18
+            bar.height = 10
+            bar.x_axis.title = "Students"
+            bar.y_axis.title = ""
+
+            data_ref = Reference(
+                ws_ov,
+                min_col=chart_tbl_col + 1,
+                min_row=chart_tbl_row,
+                max_col=chart_tbl_col + len(summary_rows),
+                max_row=chart_tbl_row + 1,
+            )
+            cats_ref = Reference(
+                ws_ov,
+                min_col=chart_tbl_col,
+                min_row=chart_tbl_row + 1,
+                max_row=chart_tbl_row + 1,
+            )
+            bar.add_data(data_ref, titles_from_data=True)
+            bar.set_categories(cats_ref)
+
+            # Keep legend at bottom and hide dense labels to prevent squishing.
+            if bar.legend is not None:
+                bar.legend.position = "b"
+
+            ws_ov.add_chart(bar, f"A{len(summary_rows) + 6}")
+
+    # ── SGPA and Backlog Matrices ───────────────────────────────────────────
+    results_data = results_data or []
+    net_backlogs = net_backlogs or {}
+
+    if results_data:
+        df_res = pd.DataFrame(results_data)
+        sems_present = sorted(
+            {
+                r.get('semester')
+                for r in results_data
+                if isinstance(r.get('semester'), str)
+                and r.get('semester', '').startswith('S')
+                and r.get('semester', '')[1:].isdigit()
+            },
+            key=_sem_key,
+        )
+        reg_nos = sorted({s['register_no'] for s in students_data if s.get('register_no')})
+
+        if not sems_present:
+            sems_present = [semester]
+        if not reg_nos:
+            reg_nos = sorted({r.get('register_no') for r in results_data if r.get('register_no')})
+
+        ws_sgpa = wb.create_sheet("SGPA Matrix", index=1)
+        _write_matrix_sheet(
+            ws_sgpa,
+            reg_nos,
+            sems_present,
+            df_res,
+            name_map,
+            value_key='sgpa',
+            title='Semester-wise SGPA Matrix',
+            fill_fn=_sgpa_fill,
+            fmt='0.00'
+        )
+
+        ws_backlog = wb.create_sheet("Backlog Matrix", index=2)
+        _write_backlog_sheet(ws_backlog, reg_nos, sems_present, net_backlogs, name_map)
 
     if not wb.sheetnames:
         wb.create_sheet("No Data")

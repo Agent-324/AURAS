@@ -1,5 +1,6 @@
 import datetime
 import os
+import re
 from functools import wraps
 
 from flask import (
@@ -17,7 +18,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
-from extract_engine import compute_net_backlogs, parse_class_report
+from extract_engine import compute_net_backlogs, detect_and_parse, parse_class_report
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 MIN_PASSWORD_LENGTH = 8
@@ -146,6 +147,7 @@ with app.app_context():
 
 
 SEMS = [f"S{i}" for i in range(1, 9)]
+REG_NO_CLASS_RE = re.compile(r"^[A-Z]+(?P<yy>\d{2})(?P<dept>[A-Z]{2,4})\d{3}$")
 
 
 def current_year():
@@ -204,7 +206,31 @@ def class_name():
     dept = current_dept()
     if not year or not dept:
         return ""
-    return f"STM{dept}{str(year)[-2:]}"
+    return f"{dept}{str(year)[-2:]}"
+
+
+def matches_selected_class(register_no, parsed_dept=None):
+    """Return True when a register number belongs to the active class (year+dept)."""
+    match = REG_NO_CLASS_RE.match((register_no or "").upper())
+    if not match:
+        return False
+
+    selected_year = str(current_year() or "")[-2:]
+    selected_dept = (current_dept() or "").upper()
+
+    if not selected_year or not selected_dept:
+        return False
+
+    reg_year = match.group("yy")
+    reg_dept = match.group("dept")
+
+    if reg_year != selected_year:
+        return False
+
+    if parsed_dept:
+        return parsed_dept.upper() == selected_dept and reg_dept == selected_dept
+
+    return reg_dept == selected_dept
 
 
 def build_sgpa_matrix():
@@ -535,7 +561,7 @@ def upload_file():
         upload.save(path)
 
         try:
-            semester, courses_dict, students = parse_class_report(path)
+            semester, courses_dict, students = detect_and_parse(path)
         except Exception as exc:
             errors.append(f"{upload.filename}: {exc}")
             continue
@@ -563,6 +589,10 @@ def upload_file():
                 )
 
         for student_data in students:
+            parsed_dept = student_data.get("_department")
+            if not matches_selected_class(student_data["register_no"], parsed_dept=parsed_dept):
+                continue
+
             register_no = student_data["register_no"]
             student = db.session.get(Student, register_no)
 
@@ -728,6 +758,189 @@ def download_report():
     path = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
 
     generate_excel_report(results_data, grades_data, students_data, net_backlogs, path, selected_course_code=code if code else None)
+    return send_file(path, as_attachment=True)
+
+
+@app.route("/api/semester_all_subjects")
+@require_class
+def semester_all_subjects():
+    """Return analysis data for ALL subjects in a given semester."""
+    sem = request.args.get("sem", "")
+    if not sem:
+        return jsonify({"error": "sem parameter required"}), 400
+
+    # Get all courses for this semester
+    courses = Course.query.filter_by(
+        semester=sem,
+        batch_year=current_year(),
+        department=current_dept(),
+    ).all()
+
+    if not courses:
+        return jsonify({"semester": sem, "subjects": []})
+
+    from collections import Counter
+
+    fail_grades = {"F", "FE", "LP", "I", "Absent"}
+    grade_points = {"S": 10, "A+": 9, "A": 8.5, "B+": 8, "B": 7,
+                    "C+": 6, "C": 5, "D": 4, "P": 3,
+                    "F": 0, "FE": 0, "LP": 0, "I": 0, "Absent": 0}
+    quality_grades = {"S", "A+", "A", "B+"}
+    grade_order = ["S", "A+", "A", "B+", "B", "C+", "C", "D", "P",
+                   "F", "FE", "LP", "I", "Absent"]
+
+    subjects = []
+    for course in courses:
+        rows = (
+            CourseGrade.query.join(Student)
+            .filter(
+                Student.batch_year == current_year(),
+                Student.department == current_dept(),
+                CourseGrade.course_code == course.code,
+                CourseGrade.semester == sem,
+            )
+            .all()
+        )
+        if not rows:
+            continue
+
+        counts = Counter(row.grade for row in rows)
+        total = len(rows)
+
+        distribution = []
+        for grade in grade_order:
+            if grade in counts:
+                distribution.append({
+                    "grade": grade,
+                    "count": counts[grade],
+                    "fail": grade in fail_grades,
+                })
+
+        pass_cnt = sum(v for k, v in counts.items() if k not in fail_grades)
+        fail_cnt = total - pass_cnt
+        pass_pct = round(pass_cnt / total * 100, 1) if total else 0
+
+        gp_sum = sum(grade_points.get(row.grade, 0) for row in rows)
+        avg_gp = round(gp_sum / total, 2) if total else 0
+
+        quality_cnt = sum(counts.get(g, 0) for g in quality_grades)
+        quality_idx = round(quality_cnt / total * 100, 1) if total else 0
+
+        subjects.append({
+            "code": course.code,
+            "name": course.name,
+            "total": total,
+            "pass_count": pass_cnt,
+            "fail_count": fail_cnt,
+            "pass_pct": pass_pct,
+            "avg_grade_point": avg_gp,
+            "quality_index": quality_idx,
+            "distribution": distribution,
+        })
+
+    # Sort by code
+    subjects.sort(key=lambda s: s["code"])
+    return jsonify({"semester": sem, "subjects": subjects})
+
+
+@app.route("/download_semester_report")
+@require_class
+def download_semester_report():
+    """Download Excel report with analysis for ALL subjects in a semester."""
+    from report_generator import generate_all_subjects_excel_report
+
+    sem = request.args.get("sem", "")
+    if not sem:
+        return redirect(url_for("index"))
+
+    grades = (
+        db.session.query(CourseGrade)
+        .join(Student)
+        .filter(
+            Student.batch_year == current_year(),
+            Student.department == current_dept(),
+            CourseGrade.semester == sem,
+        )
+        .all()
+    )
+    all_grades = (
+        db.session.query(CourseGrade)
+        .join(Student)
+        .filter(
+            Student.batch_year == current_year(),
+            Student.department == current_dept(),
+        )
+        .all()
+    )
+    results = (
+        db.session.query(SemesterResult)
+        .join(Student)
+        .filter(
+            Student.batch_year == current_year(),
+            Student.department == current_dept(),
+        )
+        .all()
+    )
+    students_list = Student.query.filter_by(
+        batch_year=current_year(), department=current_dept()
+    ).all()
+    courses = Course.query.filter_by(
+        semester=sem,
+        batch_year=current_year(),
+        department=current_dept(),
+    ).all()
+
+    grades_data = [
+        {
+            "register_no": g.register_no,
+            "semester": g.semester,
+            "course_code": g.course_code,
+            "course_name": g.course_name,
+            "grade": g.grade,
+        }
+        for g in grades
+    ]
+    all_grades_data = [
+        {
+            "register_no": g.register_no,
+            "semester": g.semester,
+            "course_code": g.course_code,
+            "course_name": g.course_name,
+            "grade": g.grade,
+        }
+        for g in all_grades
+    ]
+    results_data = [
+        {
+            "register_no": r.register_no,
+            "semester": r.semester,
+            "sgpa": r.sgpa,
+            "backlogs": r.backlogs,
+        }
+        for r in results
+    ]
+    students_data = [
+        {"register_no": s.register_no, "name": s.name}
+        for s in students_list
+    ]
+    courses_data = [
+        {"code": c.code, "name": c.name}
+        for c in courses
+    ]
+
+    filename = f"AURAS_AllSubjects_{class_name()}_{sem}.xlsx"
+    path = os.path.join(app.config["DOWNLOAD_FOLDER"], filename)
+    net_backlogs = compute_net_backlogs(all_grades_data)
+
+    generate_all_subjects_excel_report(
+        grades_data,
+        students_data,
+        courses_data,
+        sem,
+        path,
+        results_data=results_data,
+        net_backlogs=net_backlogs,
+    )
     return send_file(path, as_attachment=True)
 
 

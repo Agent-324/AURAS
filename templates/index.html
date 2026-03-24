@@ -359,6 +359,45 @@
             top: 0;
             z-index: 2;
         }
+
+        /* ── All Subjects Overview ── */
+        .subject-summary-card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,.06);
+            transition: transform .15s, box-shadow .15s;
+            overflow: hidden;
+        }
+        .subject-summary-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,.12);
+        }
+        .subject-card-header {
+            background: linear-gradient(135deg, var(--navy), var(--blue));
+            color: #fff;
+            padding: 12px 16px;
+        }
+        .subject-card-header .code {
+            font-weight: 700;
+            font-size: .95rem;
+        }
+        .subject-card-header .name {
+            font-size: .75rem;
+            opacity: .85;
+        }
+        .mini-grade-bar {
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            background: #eee;
+            display: flex;
+        }
+        .mini-grade-bar .pass-segment {
+            background: linear-gradient(90deg, #27AE60, #2ECC71);
+        }
+        .mini-grade-bar .fail-segment {
+            background: linear-gradient(90deg, #E74C3C, #C0392B);
+        }
     </style>
 </head>
 
@@ -470,9 +509,14 @@
                                 </select>
                             </div>
                         </div>
-                        <a id="exportReportBtn" href="/download_report" class="btn btn-success fw-bold py-2 w-100">
-                            📊 Download Excel Report
-                        </a>
+                        <div class="d-flex gap-2">
+                            <a id="exportReportBtn" href="/download_report" class="btn btn-success fw-bold py-2 flex-fill">
+                                📊 Download Excel Report
+                            </a>
+                            <a class="btn btn-outline-success fw-bold py-2 flex-fill" id="btnDownloadSemReport" href="#" style="pointer-events:none;opacity:.5;" title="Select a semester to download all subjects report">
+                                📥 Download All-Subjects Report
+                            </a>
+                        </div>
                         <p class="text-muted small mt-2 mb-0">
                             <strong>Tip:</strong> Leave subject blank for SGPA & backlog matrices only, 
                             or select a subject to include detailed analysis.
@@ -699,7 +743,7 @@
                     </div>
 
                     <!-- Step 2: Subject (populated by JS) -->
-                    <div class="col-12 col-md-6">
+                    <div class="col-12 col-md-5">
                         <div class="d-flex align-items-center gap-2 mb-1">
                             <span id="step2Badge"
                                 style="background:#adb5bd;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;transition:background .2s;">2</span>
@@ -710,6 +754,13 @@
                         </select>
                     </div>
 
+                </div>
+
+                <!-- Action buttons row -->
+                <div class="d-flex gap-2 mb-3 flex-wrap" id="subjectActionBtns" style="display:none !important;">
+                    <button class="btn btn-outline-primary btn-sm fw-semibold" id="btnViewAllSubjects" onclick="loadAllSubjects()" disabled>
+                        📊 View All Subjects
+                    </button>
                 </div>
 
                 <!-- Hidden data: semester → courses JSON for JS -->
@@ -783,9 +834,17 @@
             badge.style.background = sem ? 'var(--navy)' : '#adb5bd';
             lbl.textContent = sem ? `Select Subject  ·  Semester ${sem}` : 'Select Subject';
 
+            // Show/hide action buttons
+            const actionBtns = document.getElementById('subjectActionBtns');
+            actionBtns.style.display = sem ? 'flex' : 'none';
+
+            // Enable/disable the View All button
+            const btnAll = document.getElementById('btnViewAllSubjects');
+            btnAll.disabled = !sem;
+
             panel.innerHTML = sem
                 ? `<div class="text-center py-5 text-muted"><div class="fs-1">📚</div>
-           <p class="mb-0">Now select a subject for <strong>Semester ${sem}</strong>.</p></div>`
+           <p class="mb-0">Now select a subject for <strong>Semester ${sem}</strong>, or click <strong>View All Subjects</strong>.</p></div>`
                 : `<div class="text-center py-5 text-muted"><div class="fs-1">🎓</div>
            <p class="mb-0">Select a semester and subject to view grade analysis.</p></div>`;
 
@@ -976,6 +1035,101 @@
             });
         }
 
+        // ── Load All Subjects at once ────────────────────────────────────────────
+        async function loadAllSubjects() {
+            const sem = document.getElementById('semSelect').value;
+            if (!sem) return;
+            const panel = document.getElementById('subjectAnalysisPanel');
+            panel.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div><p class="mt-2 text-muted small">Loading all subjects…</p></div>';
+
+            try {
+                const res = await fetch(`/api/semester_all_subjects?sem=${encodeURIComponent(sem)}`);
+                const data = await res.json();
+                renderAllSubjects(data, panel);
+            } catch (e) {
+                panel.innerHTML = '<div class="alert alert-danger">Failed to load data.</div>';
+            }
+        }
+
+        function renderAllSubjects(data, panel) {
+            if (!data.subjects || data.subjects.length === 0) {
+                panel.innerHTML = '<div class="text-muted text-center py-4">No subject data for this semester.</div>';
+                return;
+            }
+
+            const gradeColorMap = {
+                'S': '#1B9E3E', 'A+': '#27AE60', 'A': '#2ECC71',
+                'B+': '#2E86C1', 'B': '#3498DB', 'C+': '#AF7AC5',
+                'C': '#F39C12', 'D': '#E67E22', 'P': '#F1C40F',
+                'F': '#E74C3C', 'FE': '#C0392B', 'LP': '#95A5A6',
+                'I': '#7F8C8D', 'Absent': '#BDC3C7'
+            };
+
+            const cards = data.subjects.map(s => {
+                const passPct = s.pass_pct;
+                const failPct = 100 - passPct;
+                // Mini distribution bars
+                const maxC = Math.max(...s.distribution.map(d => d.count), 1);
+                const distBars = s.distribution.map(d => {
+                    const w = Math.max((d.count / maxC * 100), 6).toFixed(0);
+                    const color = gradeColorMap[d.grade] || (d.fail ? '#E74C3C' : '#2E75B6');
+                    return `<div class="d-flex align-items-center mb-1">
+                        <span style="width:32px;font-size:.7rem;font-weight:700;text-align:center;" class="${d.fail ? 'text-danger' : 'text-primary'}">${d.grade}</span>
+                        <div style="flex:1;background:#eee;border-radius:4px;height:14px;overflow:hidden;">
+                            <div style="width:${w}%;background:${color};height:100%;border-radius:4px;display:flex;align-items:center;padding-left:4px;">
+                                <span style="font-size:.6rem;color:#fff;font-weight:600;">${d.count}</span>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+
+                return `
+                <div class="col-12 col-md-6 col-lg-4">
+                    <div class="subject-summary-card">
+                        <div class="subject-card-header">
+                            <div class="code">${s.code}</div>
+                            <div class="name">${s.name}</div>
+                        </div>
+                        <div class="card-body p-3">
+                            <div class="row g-2 mb-2">
+                                <div class="col-4 text-center">
+                                    <div class="fw-bold fs-5 text-primary">${s.total}</div>
+                                    <div class="text-muted" style="font-size:.65rem;">Total</div>
+                                </div>
+                                <div class="col-4 text-center">
+                                    <div class="fw-bold fs-5 text-success">${s.pass_count}</div>
+                                    <div class="text-muted" style="font-size:.65rem;">Passed</div>
+                                </div>
+                                <div class="col-4 text-center">
+                                    <div class="fw-bold fs-5 text-danger">${s.fail_count}</div>
+                                    <div class="text-muted" style="font-size:.65rem;">Failed</div>
+                                </div>
+                            </div>
+                            <div class="mini-grade-bar mb-2">
+                                <div class="pass-segment" style="width:${passPct}%"></div>
+                                <div class="fail-segment" style="width:${failPct}%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2 small">
+                                <span class="fw-semibold ${passPct >= 80 ? 'text-success' : passPct >= 60 ? 'text-warning' : 'text-danger'}">${passPct}% Pass</span>
+                                <span style="color:#8E44AD;font-weight:600;">QI: ${s.quality_index}%</span>
+                                <span style="color:#2E75B6;font-weight:600;">GP: ${s.avg_grade_point}</span>
+                            </div>
+                            ${distBars}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+
+            panel.innerHTML = `
+                <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+                    <h6 class="mb-0 fw-bold">📊 All Subjects – Semester ${data.semester}
+                        <span class="badge bg-secondary ms-2">${data.subjects.length} subjects</span>
+                    </h6>
+                </div>
+                <div class="row g-3">${cards}</div>
+            `;
+        }
+
         // Two-step selection: use onSemChange() + loadSubjectAnalysis() driven by user interaction.
 
         // ── Export Report: 2-step selection ──────────────────────────────────────────
@@ -1015,6 +1169,7 @@
             const sem = document.getElementById('exportSemSelect').value;
             const code = document.getElementById('exportCourseSelect').value;
             const btn = document.getElementById('exportReportBtn');
+            const btnDlSem = document.getElementById('btnDownloadSemReport');
 
             let url = '/download_report';
             const params = [];
@@ -1029,6 +1184,19 @@
             }
             
             btn.href = url;
+
+            // Handle the All-Subjects Download button state
+            if (sem) {
+                btnDlSem.href = `/download_semester_report?sem=${encodeURIComponent(sem)}`;
+                btnDlSem.style.pointerEvents = 'auto';
+                btnDlSem.style.opacity = '1';
+                btnDlSem.title = "";
+            } else {
+                btnDlSem.href = '#';
+                btnDlSem.style.pointerEvents = 'none';
+                btnDlSem.style.opacity = '.5';
+                btnDlSem.title = "Select a semester to download all subjects report";
+            }
         }
     </script>
 </body>
