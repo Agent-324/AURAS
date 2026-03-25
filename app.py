@@ -150,6 +150,15 @@ SEMS = [f"S{i}" for i in range(1, 9)]
 REG_NO_CLASS_RE = re.compile(r"^[A-Z]+(?P<yy>\d{2})(?P<dept>[A-Z]{2,4})\d{3}$")
 
 
+def semester_sort_key(value):
+    """Sort semesters safely, pushing malformed values to the end."""
+    text = (value or "").strip().upper()
+    match = re.match(r"^S(\d+)$", text)
+    if match:
+        return (0, int(match.group(1)), text)
+    return (1, 999, text)
+
+
 def current_year():
     return session.get("year")
 
@@ -242,7 +251,7 @@ def build_sgpa_matrix():
     )
 
     reg_nos = sorted({r.register_no for r in results})
-    sems_used = sorted({r.semester for r in results}, key=lambda s: int(s[1:]))
+    sems_used = sorted({r.semester for r in results if r.semester}, key=semester_sort_key)
 
     sgpa_map = {}
     for result in results:
@@ -282,7 +291,7 @@ def build_backlog_matrix():
     ]
 
     net = compute_net_backlogs(grade_rows)
-    sems_used = sorted({grade.semester for grade in grades}, key=lambda s: int(s[1:]))
+    sems_used = sorted({grade.semester for grade in grades if grade.semester}, key=semester_sort_key)
 
     students = {
         student.register_no: student.name
@@ -301,7 +310,7 @@ def build_backlog_matrix():
 
 def get_courses_for_class():
     courses = Course.query.filter_by(batch_year=current_year(), department=current_dept()).all()
-    return sorted(courses, key=lambda course: (int(course.semester[1:]), course.code))
+    return sorted(courses, key=lambda course: (semester_sort_key(course.semester), course.code or ""))
 
 
 def get_user_or_none(user_id):
@@ -570,70 +579,82 @@ def upload_file():
             errors.append(f"{upload.filename}: Could not extract data.")
             continue
 
-        for code, name in courses_dict.items():
-            existing = Course.query.filter_by(
-                code=code,
-                semester=semester,
-                batch_year=current_year(),
-                department=current_dept(),
-            ).first()
-            if not existing:
-                db.session.add(
-                    Course(
-                        code=code,
-                        name=name,
-                        semester=semester,
-                        batch_year=current_year(),
-                        department=current_dept(),
-                    )
-                )
+        if semester_sort_key(semester)[0] != 0:
+            errors.append(f"{upload.filename}: Invalid semester value '{semester}'.")
+            continue
 
-        for student_data in students:
-            parsed_dept = student_data.get("_department")
-            if not matches_selected_class(student_data["register_no"], parsed_dept=parsed_dept):
-                continue
-
-            register_no = student_data["register_no"]
-            student = db.session.get(Student, register_no)
-
-            if not student:
-                db.session.add(
-                    Student(
-                        register_no=register_no,
-                        name=student_data["name"],
-                        batch_year=current_year(),
-                        department=current_dept(),
-                    )
-                )
-            elif not student.name and student_data["name"]:
-                student.name = student_data["name"]
-
-            SemesterResult.query.filter_by(register_no=register_no, semester=semester).delete()
-            CourseGrade.query.filter_by(register_no=register_no, semester=semester).delete()
-
-            db.session.add(
-                SemesterResult(
-                    register_no=register_no,
+        try:
+            for code, name in courses_dict.items():
+                existing = Course.query.filter_by(
+                    code=code,
                     semester=semester,
-                    sgpa=student_data["sgpa"],
-                    cgpa=student_data["cgpa"],
-                    backlogs=student_data["backlogs"],
-                )
-            )
+                    batch_year=current_year(),
+                    department=current_dept(),
+                ).first()
+                if not existing:
+                    db.session.add(
+                        Course(
+                            code=code,
+                            name=name,
+                            semester=semester,
+                            batch_year=current_year(),
+                            department=current_dept(),
+                        )
+                    )
 
-            for code, grade in student_data["grades"].items():
+            for student_data in students:
+                register_no = student_data.get("register_no")
+                if not register_no:
+                    continue
+
+                parsed_dept = student_data.get("_department")
+                if not matches_selected_class(register_no, parsed_dept=parsed_dept):
+                    continue
+
+                student = db.session.get(Student, register_no)
+
+                if not student:
+                    db.session.add(
+                        Student(
+                            register_no=register_no,
+                            name=student_data.get("name", ""),
+                            batch_year=current_year(),
+                            department=current_dept(),
+                        )
+                    )
+                elif not student.name and student_data.get("name"):
+                    student.name = student_data["name"]
+
+                SemesterResult.query.filter_by(register_no=register_no, semester=semester).delete()
+                CourseGrade.query.filter_by(register_no=register_no, semester=semester).delete()
+
                 db.session.add(
-                    CourseGrade(
+                    SemesterResult(
                         register_no=register_no,
                         semester=semester,
-                        course_code=code,
-                        course_name=courses_dict.get(code, ""),
-                        grade=grade,
+                        sgpa=student_data.get("sgpa", 0.0),
+                        cgpa=student_data.get("cgpa", 0.0),
+                        backlogs=student_data.get("backlogs", 0),
                     )
                 )
 
-        db.session.commit()
-        uploaded += 1
+                for code, grade in student_data.get("grades", {}).items():
+                    db.session.add(
+                        CourseGrade(
+                            register_no=register_no,
+                            semester=semester,
+                            course_code=code,
+                            course_name=courses_dict.get(code, ""),
+                            grade=grade,
+                        )
+                    )
+
+            db.session.commit()
+            uploaded += 1
+        except Exception as exc:
+            db.session.rollback()
+            errors.append(f"{upload.filename}: Failed to save parsed data ({exc}).")
+            continue
 
     if uploaded:
         flash(f"Successfully imported {uploaded} file(s).", "success")
