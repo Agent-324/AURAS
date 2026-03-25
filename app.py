@@ -15,7 +15,7 @@ from flask import (
     url_for,
 )
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
+from sqlalchemy import String, text
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -150,17 +150,42 @@ def ensure_schema_compatibility():
         SELECT character_maximum_length
         FROM information_schema.columns
         WHERE table_schema = current_schema()
-          AND table_name = 'course_grades'
-          AND column_name = 'grade'
+          AND table_name = :table_name
+          AND column_name = :column_name
         """
     )
 
     try:
-        current_len = db.session.execute(length_query).scalar()
-        if current_len is not None and current_len < 16:
-            db.session.execute(text("ALTER TABLE course_grades ALTER COLUMN grade TYPE VARCHAR(16)"))
+        altered_columns = []
+
+        for table in db.Model.metadata.tables.values():
+            for column in table.columns:
+                expected_len = getattr(column.type, "length", None)
+                if not isinstance(column.type, String) or not expected_len:
+                    continue
+
+                current_len = db.session.execute(
+                    length_query,
+                    {"table_name": table.name, "column_name": column.name},
+                ).scalar()
+
+                if current_len is None or current_len >= expected_len:
+                    continue
+
+                db.session.execute(
+                    text(
+                        f'ALTER TABLE "{table.name}" '
+                        f'ALTER COLUMN "{column.name}" TYPE VARCHAR({expected_len})'
+                    )
+                )
+                altered_columns.append(f"{table.name}.{column.name} ({current_len} -> {expected_len})")
+
+        if altered_columns:
             db.session.commit()
-            app.logger.info("Updated course_grades.grade to VARCHAR(16) for grade compatibility.")
+            app.logger.info(
+                "Updated PostgreSQL varchar columns for compatibility: %s",
+                ", ".join(altered_columns),
+            )
     except Exception as exc:
         db.session.rollback()
         app.logger.warning("Schema compatibility check failed: %s", exc)
@@ -716,8 +741,8 @@ def subject_analysis():
     from collections import Counter
 
     counts = Counter(row.grade for row in rows)
-    grade_order = ["S", "A+", "A", "B+", "B", "C+", "C", "D", "P", "F", "FE", "LP", "I"]
-    fail_grades = {"F", "FE", "LP", "I"}
+    grade_order = ["S", "A+", "A", "B+", "B", "C+", "C", "D", "P", "F", "FE", "LP", "I", "Absent"]
+    fail_grades = {"F", "FE", "LP", "I", "Absent"}
     grade_points = {"S": 10, "A+": 9, "A": 8.5, "B+": 8, "B": 7, "C+": 6, "C": 5, "D": 4, "P": 3, "F": 0, "FE": 0, "LP": 0, "I": 0}
     quality_grades = {"S", "A+", "A", "B+"}
 
