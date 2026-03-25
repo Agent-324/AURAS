@@ -15,6 +15,7 @@ from flask import (
     url_for,
 )
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
@@ -78,7 +79,7 @@ class CourseGrade(db.Model):
     semester = db.Column(db.String(5))
     course_code = db.Column(db.String(20))
     course_name = db.Column(db.String(150))
-    grade = db.Column(db.String(5))
+    grade = db.Column(db.String(16))
 
 
 class Course(db.Model):
@@ -139,11 +140,38 @@ def bootstrap_admin():
         )
 
 
+def ensure_schema_compatibility():
+    """Apply lightweight runtime schema fixes for managed deployments."""
+    if not db.engine.url.drivername.startswith("postgresql"):
+        return
+
+    length_query = text(
+        """
+        SELECT character_maximum_length
+        FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'course_grades'
+          AND column_name = 'grade'
+        """
+    )
+
+    try:
+        current_len = db.session.execute(length_query).scalar()
+        if current_len is not None and current_len < 16:
+            db.session.execute(text("ALTER TABLE course_grades ALTER COLUMN grade TYPE VARCHAR(16)"))
+            db.session.commit()
+            app.logger.info("Updated course_grades.grade to VARCHAR(16) for grade compatibility.")
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.warning("Schema compatibility check failed: %s", exc)
+
+
 with app.app_context():
     auto_init_db = os.environ.get("AURAS_AUTO_INIT_DB", "true").strip().lower() in {"1", "true", "yes", "on"}
     if auto_init_db:
         db.create_all()
         bootstrap_admin()
+    ensure_schema_compatibility()
 
 
 SEMS = [f"S{i}" for i in range(1, 9)]
