@@ -9,14 +9,15 @@ GRADE_POINTS = {
     'F': 0, 'FE': 0, 'LP': 0, 'I': 0, 'Absent': 0,
 }
 
-# KTU 2019 scheme – typical credit mapping by course-code prefix.
-# Theory (xT / xN / HUT): 4 credits  |  Lab (xL): 2 credits
-# MCN / HUT zero-credit or 1 credit depending on course.
-# This map is used as a fallback; if a course can be found in the DB it
-# is better to use the stored credit.
+# KTU 2019 scheme – known course-credit overrides.
+# Use exact course-code mappings where available, then fall back to a
+# prefix-based heuristic for anything we do not explicitly know yet.
 KTU_CREDITS = {
+    # ----- CS S4 -----
+    'MAT206': 4, 'CST202': 4, 'CST204': 4, 'CST206': 4,
+    'HUT200': 2, 'MCN202': 0, 'CSL202': 2, 'CSL204': 2,
     # ----- CS S5 -----
-    'CST301': 4, 'CST303': 4, 'CST305': 4, 'CST307': 4, 'CST309': 4,
+    'CST301': 4, 'CST303': 4, 'CST305': 4, 'CST307': 4, 'CST309': 3,
     'CSL331': 2, 'CSL333': 2,
     # ----- CE S5 -----
     'CET301': 4, 'CET303': 4, 'CET305': 4, 'CET307': 4, 'CET309': 4,
@@ -35,7 +36,7 @@ KTU_CREDITS = {
     'CDL331': 2,
     # ----- Common -----
     'MCN301': 0, 'MCN201': 0, 'MCN202': 0,   # no-credit
-    'HUT300': 3, 'HUT310': 3, 'HUT200': 3,
+    'HUT300': 3, 'HUT310': 3,
 }
 
 
