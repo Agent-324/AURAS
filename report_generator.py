@@ -499,7 +499,7 @@ def generate_all_subjects_excel_report(grades_data, students_data, courses_data,
         _auto_col_widths(ws_ov)
         ws_ov.column_dimensions['B'].width = 36
 
-        # ── Summary Bar Chart (screenshot-style: one PASSED category) ────
+        # ── Summary Bar Chart (horizontal bars, one series per subject) ────
         if len(summary_rows) > 0:
             chart_tbl_col = 10  # J
             chart_tbl_row = len(summary_rows) + 5
@@ -514,13 +514,11 @@ def generate_all_subjects_excel_report(grades_data, students_data, courses_data,
             ws_ov.cell(row=chart_tbl_row + 1, column=chart_tbl_col, value='PASSED')
 
             bar = BarChart()
-            bar.title = "Chart Title"
+            bar.title = f"Passed Students Per Subject – Semester {semester}"
             bar.type = "bar"
             bar.style = 10
             bar.width = 18
             bar.height = 10
-            bar.x_axis.title = "Students"
-            bar.y_axis.title = ""
 
             data_ref = Reference(
                 ws_ov,
@@ -538,7 +536,14 @@ def generate_all_subjects_excel_report(grades_data, students_data, courses_data,
             bar.add_data(data_ref, titles_from_data=True)
             bar.set_categories(cats_ref)
 
-            # Keep legend at bottom and hide dense labels to prevent squishing.
+            # Show only the value on each bar (no series/category names)
+            if DataLabelList is not None:
+                bar.dataLabels = DataLabelList()
+                bar.dataLabels.showVal = True
+                bar.dataLabels.showSerName = False
+                bar.dataLabels.showCatName = False
+
+            # Keep legend at bottom
             if bar.legend is not None:
                 bar.legend.position = "b"
 
