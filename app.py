@@ -679,7 +679,7 @@ def upload_file():
                     existing_courses[code] = course
 
             # Process all students
-            all_extracted_regs = [s["register_no"] for s in std_parsed if s.get("register_no")]
+            all_extracted_regs = list({s["register_no"] for s in std_parsed if s.get("register_no")})
             
             if all_extracted_regs:
                 # Bulk delete overlapping results
@@ -688,9 +688,11 @@ def upload_file():
 
                 existing_students = {s.register_no: s for s in Student.query.filter(Student.register_no.in_(all_extracted_regs)).all()}
 
+                pending_student_rows = []
+
                 for student_data in std_parsed:
                     register_no = student_data.get("register_no")
-                    if not register_no: 
+                    if not register_no:
                         continue
 
                     student = existing_students.get(register_no)
@@ -712,6 +714,14 @@ def upload_file():
                             student.name = student_data["name"]
                         student.department = dpt
                         student.batch_year = b_year
+
+                    pending_student_rows.append(student_data)
+
+                # Flush parent rows before inserting dependent results/grades.
+                db.session.flush()
+
+                for student_data in pending_student_rows:
+                    register_no = student_data["register_no"]
 
                     db.session.add(
                         SemesterResult(
