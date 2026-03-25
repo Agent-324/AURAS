@@ -297,7 +297,7 @@ def matches_selected_class(register_no, parsed_dept=None):
 
 def build_sgpa_matrix():
     results = (
-        db.session.query(SemesterResult)
+        db.session.query(SemesterResult.register_no, SemesterResult.semester, SemesterResult.sgpa, Student.name)
         .join(Student)
         .filter(Student.batch_year == current_year(), Student.department == current_dept())
         .all()
@@ -307,13 +307,10 @@ def build_sgpa_matrix():
     sems_used = sorted({r.semester for r in results if r.semester}, key=semester_sort_key)
 
     sgpa_map = {}
+    students = {}
     for result in results:
         sgpa_map.setdefault(result.register_no, {})[result.semester] = result.sgpa
-
-    students = {
-        student.register_no: student.name
-        for student in Student.query.filter_by(batch_year=current_year(), department=current_dept()).all()
-    }
+        students[result.register_no] = result.name
 
     matrix = []
     for register_no in reg_nos:
@@ -327,7 +324,7 @@ def build_sgpa_matrix():
 
 def build_backlog_matrix():
     grades = (
-        db.session.query(CourseGrade)
+        db.session.query(CourseGrade.register_no, CourseGrade.semester, CourseGrade.course_code, CourseGrade.grade, Student.name)
         .join(Student)
         .filter(Student.batch_year == current_year(), Student.department == current_dept())
         .all()
@@ -346,10 +343,7 @@ def build_backlog_matrix():
     net = compute_net_backlogs(grade_rows)
     sems_used = sorted({grade.semester for grade in grades if grade.semester}, key=semester_sort_key)
 
-    students = {
-        student.register_no: student.name
-        for student in Student.query.filter_by(batch_year=current_year(), department=current_dept()).all()
-    }
+    students = {grade.register_no: grade.name for grade in grades}
 
     matrix = []
     for register_no in sorted(net.keys()):
@@ -426,7 +420,7 @@ def select_class():
     return render_template(
         "selection.html",
         years=years,
-        depts=["CS", "EC", "ME", "CE", "EEE"],
+        depts=["CS", "CD", "EC", "ME", "CE", "EEE"],
         role=session.get("role"),
         username=current_username(),
     )
@@ -623,12 +617,12 @@ def upload_file():
         upload.save(path)
 
         try:
-            semester, courses_dict, students = detect_and_parse(path)
+            semester, courses_dict, std_parsed = detect_and_parse(path)
         except Exception as exc:
             errors.append(f"{upload.filename}: {exc}")
             continue
 
-        if not semester or not students:
+        if not semester or not std_parsed:
             errors.append(f"{upload.filename}: Could not extract data.")
             continue
 
@@ -637,70 +631,103 @@ def upload_file():
             continue
 
         try:
-            for code, name in courses_dict.items():
-                existing = Course.query.filter_by(
-                    code=code,
+            # Extract distinct classes from this parsed PDF
+            classes_in_pdf = set()
+            for s in std_parsed:
+                r_no = s.get("register_no")
+                if not r_no: 
+                    continue
+                match = REG_NO_CLASS_RE.match(r_no.upper())
+                batch_year = f"20{match.group('yy')}" if match else current_year()
+                dept = (match.group("dept") if match else s.get("_department")) or current_dept()
+                
+                s["_batch_year"] = batch_year
+                s["_department"] = dept
+                classes_in_pdf.add((batch_year, dept))
+
+            # Now, for all these classes, ensure the courses exist
+            for b_year, dpt in classes_in_pdf:
+                existing_courses_query = Course.query.filter_by(
                     semester=semester,
-                    batch_year=current_year(),
-                    department=current_dept(),
-                ).first()
-                if not existing:
-                    db.session.add(
-                        Course(
-                            code=code,
-                            name=name,
-                            semester=semester,
-                            batch_year=current_year(),
-                            department=current_dept(),
+                    batch_year=b_year,
+                    department=dpt,
+                ).all()
+                existing_course_codes = {c.code for c in existing_courses_query}
+                
+                # Check which courses are actually taken by students in this class
+                taken_courses = set()
+                for s in std_parsed:
+                    if s.get("_batch_year") == b_year and s.get("_department") == dpt:
+                        taken_courses.update(s.get("grades", {}).keys())
+
+                for code in taken_courses:
+                    if code not in existing_course_codes:
+                        name = courses_dict.get(code, "")
+                        db.session.add(
+                            Course(
+                                code=code,
+                                name=name,
+                                semester=semester,
+                                batch_year=b_year,
+                                department=dpt,
+                            )
                         )
-                    )
 
-            for student_data in students:
-                register_no = student_data.get("register_no")
-                if not register_no:
-                    continue
+            # Process all students
+            all_extracted_regs = [s["register_no"] for s in std_parsed if s.get("register_no")]
+            
+            if all_extracted_regs:
+                # Bulk delete overlapping results
+                SemesterResult.query.filter_by(semester=semester).filter(SemesterResult.register_no.in_(all_extracted_regs)).delete(synchronize_session=False)
+                CourseGrade.query.filter_by(semester=semester).filter(CourseGrade.register_no.in_(all_extracted_regs)).delete(synchronize_session=False)
 
-                parsed_dept = student_data.get("_department")
-                if not matches_selected_class(register_no, parsed_dept=parsed_dept):
-                    continue
+                existing_students = {s.register_no: s for s in Student.query.filter(Student.register_no.in_(all_extracted_regs)).all()}
 
-                student = db.session.get(Student, register_no)
+                for student_data in std_parsed:
+                    register_no = student_data.get("register_no")
+                    if not register_no: 
+                        continue
 
-                if not student:
-                    db.session.add(
-                        Student(
+                    student = existing_students.get(register_no)
+                    b_year = student_data["_batch_year"]
+                    dpt = student_data["_department"]
+
+                    if not student:
+                        student = Student(
                             register_no=register_no,
                             name=student_data.get("name", ""),
-                            batch_year=current_year(),
-                            department=current_dept(),
+                            batch_year=b_year,
+                            department=dpt,
                         )
-                    )
-                elif not student.name and student_data.get("name"):
-                    student.name = student_data["name"]
+                        db.session.add(student)
+                        existing_students[register_no] = student # Add to lookup so we don't duplicate
+                    else:
+                        # Update student details if missing or different without discarding old info
+                        if not student.name and student_data.get("name"):
+                            student.name = student_data["name"]
+                        student.department = dpt
+                        student.batch_year = b_year
 
-                SemesterResult.query.filter_by(register_no=register_no, semester=semester).delete()
-                CourseGrade.query.filter_by(register_no=register_no, semester=semester).delete()
-
-                db.session.add(
-                    SemesterResult(
-                        register_no=register_no,
-                        semester=semester,
-                        sgpa=student_data.get("sgpa", 0.0),
-                        cgpa=student_data.get("cgpa", 0.0),
-                        backlogs=student_data.get("backlogs", 0),
-                    )
-                )
-
-                for code, grade in student_data.get("grades", {}).items():
                     db.session.add(
-                        CourseGrade(
+                        SemesterResult(
                             register_no=register_no,
                             semester=semester,
-                            course_code=code,
-                            course_name=courses_dict.get(code, ""),
-                            grade=grade,
+                            sgpa=student_data.get("sgpa", 0.0),
+                            cgpa=student_data.get("cgpa", 0.0),
+                            backlogs=student_data.get("backlogs", 0),
                         )
                     )
+
+                    for code, grade in student_data.get("grades", {}).items():
+                        db.session.add(
+                            CourseGrade(
+                                register_no=register_no,
+                                semester=semester,
+                                course_code=code,
+                                course_name=courses_dict.get(code, ""),
+                                grade=grade,
+                            )
+                        )
 
             db.session.commit()
             uploaded += 1
@@ -743,7 +770,7 @@ def subject_analysis():
     counts = Counter(row.grade for row in rows)
     grade_order = ["S", "A+", "A", "B+", "B", "C+", "C", "D", "P", "F", "FE", "LP", "I", "Absent"]
     fail_grades = {"F", "FE", "LP", "I", "Absent"}
-    grade_points = {"S": 10, "A+": 9, "A": 8.5, "B+": 8, "B": 7, "C+": 6, "C": 5, "D": 4, "P": 3, "F": 0, "FE": 0, "LP": 0, "I": 0}
+    grade_points = {"S": 10, "A+": 9, "A": 8.5, "B+": 8, "B": 7.5, "C+": 7, "C": 6.5, "D": 6, "P": 5, "F": 0, "FE": 0, "LP": 0, "I": 0}
     quality_grades = {"S", "A+", "A", "B+"}
 
     distribution = []

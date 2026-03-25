@@ -226,8 +226,8 @@ def _write_backlog_sheet(ws, reg_nos, sems, net_backlogs, name_map):
 
 
 def _write_course_sheet(ws, code, course_name, sem, sub_df, name_map=None):
-    GRADE_POINTS = {'S': 10, 'A+': 9, 'A': 8.5, 'B+': 8, 'B': 7,
-                    'C+': 6, 'C': 5, 'D': 4, 'P': 3, 'F': 0, 'FE': 0, 'LP': 0, 'I': 0}
+    GRADE_POINTS = {'S': 10, 'A+': 9, 'A': 8.5, 'B+': 8, 'B': 7.5,
+                    'C+': 7, 'C': 6.5, 'D': 6, 'P': 5, 'F': 0, 'FE': 0, 'LP': 0, 'I': 0}
     QUALITY_GRADES = {'S', 'A+', 'A', 'B+'}
 
     # Header
@@ -422,8 +422,8 @@ def generate_all_subjects_excel_report(grades_data, students_data, courses_data,
         return
 
     QUALITY_GRADES = {'S', 'A+', 'A', 'B+'}
-    GRADE_PTS = {'S': 10, 'A+': 9, 'A': 8.5, 'B+': 8, 'B': 7,
-                 'C+': 6, 'C': 5, 'D': 4, 'P': 3,
+    GRADE_PTS = {'S': 10, 'A+': 9, 'A': 8.5, 'B+': 8, 'B': 7.5,
+                 'C+': 7, 'C': 6.5, 'D': 6, 'P': 5,
                  'F': 0, 'FE': 0, 'LP': 0, 'I': 0, 'Absent': 0}
 
     summary_rows = []   # for the overview sheet

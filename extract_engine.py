@@ -4,8 +4,8 @@ FAIL_GRADES = {'F', 'FE', 'I', 'LP', 'Absent'}
 GRADE_ORDER = ['S', 'A+', 'A', 'B+', 'B', 'C+', 'C', 'D', 'P', 'F', 'FE', 'LP', 'I', 'Absent']
 
 GRADE_POINTS = {
-    'S': 10, 'A+': 9, 'A': 8.5, 'B+': 8, 'B': 7,
-    'C+': 6, 'C': 5, 'D': 4, 'P': 3,
+    'S': 10, 'A+': 9, 'A': 8.5, 'B+': 8, 'B': 7.5,
+    'C+': 7, 'C': 6.5, 'D': 6, 'P': 5,
     'F': 0, 'FE': 0, 'LP': 0, 'I': 0, 'Absent': 0,
 }
 
@@ -78,7 +78,7 @@ def _clean(cell):
 # Parser 1 – Tabular "Semester Grade Card Report" PDFs (original format)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def parse_class_report(pdf_path):
+def parse_class_report(pdf):
     """
     Parse a KTU class-wise semester grade card report PDF.
 
@@ -95,96 +95,90 @@ def parse_class_report(pdf_path):
     course_col_map = {} # column-index -> course_code  (set from first table that has header)
     sgpa_idx = cgpa_idx = earned_idx = None
 
-    try:
-        import pdfplumber
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("pdfplumber is required to parse uploaded PDF reports.") from exc
+    full_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
 
-    with pdfplumber.open(pdf_path) as pdf:
-        full_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+    # ── semester ──────────────────────────────────────────────────────
+    m = re.search(r'Semester\s*[:\-]\s*(S\d)', full_text, re.IGNORECASE)
+    if m:
+        semester = m.group(1)
 
-        # ── semester ──────────────────────────────────────────────────────
-        m = re.search(r'Semester\s*[:\-]\s*(S\d)', full_text, re.IGNORECASE)
-        if m:
-            semester = m.group(1)
+    # ── collect all tables from every page ────────────────────────────
+    all_tables = []
+    for page in pdf.pages:
+        all_tables.extend(page.extract_tables() or [])
 
-        # ── collect all tables from every page ────────────────────────────
-        all_tables = []
-        for page in pdf.pages:
-            all_tables.extend(page.extract_tables() or [])
+    for table in all_tables:
+        if not table:
+            continue
 
-        for table in all_tables:
-            if not table:
+        # ── course-info table: cells look like "MAT206 - GRAPH THEORY" ──
+        for row in table:
+            for cell in row:
+                c = _clean(cell)
+                m = re.match(r'([A-Z]{2,4}\d{3,4})\s*[-–]\s*(.+)', c)
+                if m:
+                    courses[m.group(1)] = m.group(2).strip()
+
+        # ── detect student-grades table by looking for 'Student' header ─
+        header = [_clean(c) for c in table[0]]
+        is_header_row = 'Student' in header and 'SGPA' in header
+
+        if is_header_row:
+            # Build column mapping from this header
+            for i, h in enumerate(header):
+                # course codes are split across two lines, e.g. 'MAT20\n6' → 'MAT206'
+                code_candidate = re.sub(r'\s+', '', h)   # remove all whitespace
+                if re.match(r'^[A-Z]{2,4}\d{3,4}$', code_candidate):
+                    course_col_map[i] = code_candidate
+                elif 'SGPA' in h:
+                    sgpa_idx = i
+                elif 'CGPA' in h:
+                    cgpa_idx = i
+                elif 'Earned' in h or 'Earn' in h:
+                    earned_idx = i
+            data_rows = table[1:]
+        else:
+            # Pages 2+ – no header, use same column map established above
+            data_rows = table
+
+        if not course_col_map:
+            continue   # haven't found a header yet, skip
+
+        for row in data_rows:
+            if not row or not row[0]:
+                continue
+            student_cell = _clean(row[0])
+
+            # Register numbers: STM23CS046, LSTM23CS055, MLT23CS011 …
+            rm = re.match(r'([A-Z]+\d{2}[A-Z]+\d{3})', student_cell)
+            if not rm:
                 continue
 
-            # ── course-info table: cells look like "MAT206 - GRAPH THEORY" ──
-            for row in table:
-                for cell in row:
-                    c = _clean(cell)
-                    m = re.match(r'([A-Z]{2,4}\d{3,4})\s*[-–]\s*(.+)', c)
-                    if m:
-                        courses[m.group(1)] = m.group(2).strip()
+            reg_no = rm.group(1)
+            name   = student_cell[len(reg_no):].lstrip('- ').strip()
 
-            # ── detect student-grades table by looking for 'Student' header ─
-            header = [_clean(c) for c in table[0]]
-            is_header_row = 'Student' in header and 'SGPA' in header
+            grades = {}
+            for col_i, code in course_col_map.items():
+                if col_i < len(row) and row[col_i]:
+                    g = _clean(row[col_i])
+                    if g and g not in ('None', '-'):
+                        grades[code] = g
 
-            if is_header_row:
-                # Build column mapping from this header
-                for i, h in enumerate(header):
-                    # course codes are split across two lines, e.g. 'MAT20\n6' → 'MAT206'
-                    code_candidate = re.sub(r'\s+', '', h)   # remove all whitespace
-                    if re.match(r'^[A-Z]{2,4}\d{3,4}$', code_candidate):
-                        course_col_map[i] = code_candidate
-                    elif 'SGPA' in h:
-                        sgpa_idx = i
-                    elif 'CGPA' in h:
-                        cgpa_idx = i
-                    elif 'Earned' in h or 'Earn' in h:
-                        earned_idx = i
-                data_rows = table[1:]
-            else:
-                # Pages 2+ – no header, use same column map established above
-                data_rows = table
+            def _float(idx):
+                try:
+                    return float(_clean(row[idx])) if idx is not None and idx < len(row) and row[idx] else 0.0
+                except ValueError:
+                    return 0.0
 
-            if not course_col_map:
-                continue   # haven't found a header yet, skip
-
-            for row in data_rows:
-                if not row or not row[0]:
-                    continue
-                student_cell = _clean(row[0])
-
-                # Register numbers: STM23CS046, LSTM23CS055, MLT23CS011 …
-                rm = re.match(r'([A-Z]+\d{2}[A-Z]+\d{3})', student_cell)
-                if not rm:
-                    continue
-
-                reg_no = rm.group(1)
-                name   = student_cell[len(reg_no):].lstrip('- ').strip()
-
-                grades = {}
-                for col_i, code in course_col_map.items():
-                    if col_i < len(row) and row[col_i]:
-                        g = _clean(row[col_i])
-                        if g and g not in ('None', '-'):
-                            grades[code] = g
-
-                def _float(idx):
-                    try:
-                        return float(_clean(row[idx])) if idx is not None and idx < len(row) and row[idx] else 0.0
-                    except ValueError:
-                        return 0.0
-
-                students.append({
-                    'register_no':   reg_no,
-                    'name':          name,
-                    'sgpa':          _float(sgpa_idx),
-                    'cgpa':          _float(cgpa_idx),
-                    'earned_credits': _float(earned_idx),
-                    'grades':        grades,
-                    'backlogs':      sum(1 for g in grades.values() if g in FAIL_GRADES),
-                })
+            students.append({
+                'register_no':   reg_no,
+                'name':          name,
+                'sgpa':          _float(sgpa_idx),
+                'cgpa':          _float(cgpa_idx),
+                'earned_credits': _float(earned_idx),
+                'grades':        grades,
+                'backlogs':      sum(1 for g in grades.values() if g in FAIL_GRADES),
+            })
 
     # De-duplicate (same reg_no may appear on multiple pages due to table split)
     seen = {}
@@ -230,13 +224,14 @@ _DEPT_ABBREV = {
 def _detect_dept_abbrev(dept_full_name):
     """Return short department code from the full department name."""
     up = dept_full_name.upper().strip()
-    for key, abbrev in _DEPT_ABBREV.items():
+    # Check longer strings first so "COMPUTER SCIENCE AND DESIGN" matches before "COMPUTER SCIENCE"
+    for key in sorted(_DEPT_ABBREV.keys(), key=len, reverse=True):
         if key in up:
-            return abbrev
+            return _DEPT_ABBREV[key]
     return up[:3]
 
 
-def parse_exam_result(pdf_path):
+def parse_exam_result(pdf):
     """
     Parse a KTU exam result PDF that uses inline CourseCode(Grade) format.
 
@@ -245,133 +240,127 @@ def parse_exam_result(pdf_path):
         courses  (dict)         – {code: name}
         students (list of dict) – same shape as parse_class_report
     """
-    try:
-        import pdfplumber
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("pdfplumber is required.") from exc
-
     semester = None
     courses = {}                # code -> full name
     students = []
     current_dept = None
 
-    with pdfplumber.open(pdf_path) as pdf:
-        full_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+    full_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
 
-        # ── Detect semester from title ────────────────────────────────────
-        # e.g. "B.Tech S5 (R, S) Exam Nov 2025"
-        m = re.search(r'B\.?Tech\s+(S\d)', full_text, re.IGNORECASE)
+    # ── Detect semester from title ────────────────────────────────────
+    # e.g. "B.Tech S5 (R, S) Exam Nov 2025"
+    m = re.search(r'B\.?Tech\s+(S\d)', full_text, re.IGNORECASE)
+    if m:
+        semester = m.group(1)
+    else:
+        m = re.search(r'\(S(\d)\s+Result\)', full_text, re.IGNORECASE)
         if m:
-            semester = m.group(1)
-        else:
-            m = re.search(r'\(S(\d)\s+Result\)', full_text, re.IGNORECASE)
-            if m:
-                semester = f'S{m.group(1)}'
+            semester = f'S{m.group(1)}'
 
-        # ── Process all pages ─────────────────────────────────────────────
-        for page in pdf.pages:
-            text = page.extract_text() or ''
-            lines = text.split('\n')
+    # ── Process all pages ─────────────────────────────────────────────
+    for page in pdf.pages:
+        text = page.extract_text() or ''
+        lines = text.split('\n')
 
-            in_course_list = False   # True between "Course Code   Course" and "Register No"
+        in_course_list = False   # True between "Course Code   Course" and "Register No"
 
-            # First pass: join continuation lines.
-            # A continuation line starts with a course code (e.g. "CET309(B)")
-            # rather than a register number or header.
-            merged_lines = []
-            for line in lines:
-                line = line.strip()
-                if not line:
+        # First pass: join continuation lines.
+        # A continuation line starts with a course code (e.g. "CET309(B)")
+        # rather than a register number or header.
+        merged_lines = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Is this a continuation of the previous student line?
+            # (starts with CourseCode( but NOT a register number)
+            if (merged_lines
+                    and _GRADE_PAIR_RE.match(line)
+                    and not _REG_NO_RE.match(line)
+                    and not _DEPT_HEADER_RE.search(line)):
+                merged_lines[-1] += ' ' + line
+            else:
+                merged_lines.append(line)
+
+        for line in merged_lines:
+            # Detect department header
+            dm = _DEPT_HEADER_RE.search(line)
+            if dm:
+                current_dept = _detect_dept_abbrev(dm.group(1))
+                in_course_list = False
+                continue
+
+            # Detect course list header
+            if re.match(r'Course\s+Code\s+Course', line, re.IGNORECASE):
+                in_course_list = True
+                continue
+
+            # Detect student data header (ends course list)
+            if re.match(r'Register\s+No\s+Course\s+Code', line, re.IGNORECASE):
+                in_course_list = False
+                continue
+
+            # Parse course definitions
+            if in_course_list:
+                cm = _COURSE_LINE_RE.match(line)
+                if cm:
+                    courses[cm.group(1)] = cm.group(2).strip()
+                continue
+
+            # Parse student grade lines
+            rm = _REG_NO_RE.match(line)
+            if rm:
+                reg_no = rm.group(1)
+                # Extract all CourseCode(Grade) pairs from the merged line
+                grade_pairs = _GRADE_PAIR_RE.findall(line)
+                grades = {code: grade for code, grade in grade_pairs}
+
+                sgpa = _calculate_sgpa(grades)
+                backlogs = sum(1 for g in grades.values() if g in FAIL_GRADES)
+
+                students.append({
+                    'register_no': reg_no,
+                    'name': '',       # This format doesn't include student names
+                    'sgpa': sgpa,
+                    'cgpa': 0.0,      # Not available in this format
+                    'earned_credits': 0.0,
+                    'grades': grades,
+                    'backlogs': backlogs,
+                    '_department': current_dept,  # Extra field for filtering
+                })
+
+        # Also check tables (pdfplumber sometimes captures these better)
+        tables = page.extract_tables() or []
+        for table in tables:
+            for row in table:
+                if not row or not row[0]:
                     continue
-                # Is this a continuation of the previous student line?
-                # (starts with CourseCode( but NOT a register number)
-                if (merged_lines
-                        and _GRADE_PAIR_RE.match(line)
-                        and not _REG_NO_RE.match(line)
-                        and not _DEPT_HEADER_RE.search(line)):
-                    merged_lines[-1] += ' ' + line
-                else:
-                    merged_lines.append(line)
-
-            for line in merged_lines:
-                # Detect department header
-                dm = _DEPT_HEADER_RE.search(line)
-                if dm:
-                    current_dept = _detect_dept_abbrev(dm.group(1))
-                    in_course_list = False
+                cell0 = _clean(row[0])
+                rm = _REG_NO_RE.match(cell0)
+                if not rm:
                     continue
-
-                # Detect course list header
-                if re.match(r'Course\s+Code\s+Course', line, re.IGNORECASE):
-                    in_course_list = True
+                reg_no = rm.group(1)
+                # Already parsed from text? Skip.
+                if any(s['register_no'] == reg_no for s in students):
                     continue
-
-                # Detect student data header (ends course list)
-                if re.match(r'Register\s+No\s+Course\s+Code', line, re.IGNORECASE):
-                    in_course_list = False
+                # Combine all cells and extract grade pairs
+                combined = ' '.join(_clean(c) for c in row if c)
+                grade_pairs = _GRADE_PAIR_RE.findall(combined)
+                grades = {code: grade for code, grade in grade_pairs}
+                if not grades:
                     continue
-
-                # Parse course definitions
-                if in_course_list:
-                    cm = _COURSE_LINE_RE.match(line)
-                    if cm:
-                        courses[cm.group(1)] = cm.group(2).strip()
-                    continue
-
-                # Parse student grade lines
-                rm = _REG_NO_RE.match(line)
-                if rm:
-                    reg_no = rm.group(1)
-                    # Extract all CourseCode(Grade) pairs from the merged line
-                    grade_pairs = _GRADE_PAIR_RE.findall(line)
-                    grades = {code: grade for code, grade in grade_pairs}
-
-                    sgpa = _calculate_sgpa(grades)
-                    backlogs = sum(1 for g in grades.values() if g in FAIL_GRADES)
-
-                    students.append({
-                        'register_no': reg_no,
-                        'name': '',       # This format doesn't include student names
-                        'sgpa': sgpa,
-                        'cgpa': 0.0,      # Not available in this format
-                        'earned_credits': 0.0,
-                        'grades': grades,
-                        'backlogs': backlogs,
-                        '_department': current_dept,  # Extra field for filtering
-                    })
-
-            # Also check tables (pdfplumber sometimes captures these better)
-            tables = page.extract_tables() or []
-            for table in tables:
-                for row in table:
-                    if not row or not row[0]:
-                        continue
-                    cell0 = _clean(row[0])
-                    rm = _REG_NO_RE.match(cell0)
-                    if not rm:
-                        continue
-                    reg_no = rm.group(1)
-                    # Already parsed from text? Skip.
-                    if any(s['register_no'] == reg_no for s in students):
-                        continue
-                    # Combine all cells and extract grade pairs
-                    combined = ' '.join(_clean(c) for c in row if c)
-                    grade_pairs = _GRADE_PAIR_RE.findall(combined)
-                    grades = {code: grade for code, grade in grade_pairs}
-                    if not grades:
-                        continue
-                    sgpa = _calculate_sgpa(grades)
-                    backlogs = sum(1 for g in grades.values() if g in FAIL_GRADES)
-                    students.append({
-                        'register_no': reg_no,
-                        'name': '',
-                        'sgpa': sgpa,
-                        'cgpa': 0.0,
-                        'earned_credits': 0.0,
-                        'grades': grades,
-                        'backlogs': backlogs,
-                        '_department': current_dept,
-                    })
+                sgpa = _calculate_sgpa(grades)
+                backlogs = sum(1 for g in grades.values() if g in FAIL_GRADES)
+                students.append({
+                    'register_no': reg_no,
+                    'name': '',
+                    'sgpa': sgpa,
+                    'cgpa': 0.0,
+                    'earned_credits': 0.0,
+                    'grades': grades,
+                    'backlogs': backlogs,
+                    '_department': current_dept,
+                })
 
     # De-duplicate: keep the entry with the most grades
     seen = {}
@@ -402,22 +391,22 @@ def detect_and_parse(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
         first_text = (pdf.pages[0].extract_text() or '') if pdf.pages else ''
 
-    # The tabular "Semester Grade Card Report" format has the string
-    # "Semester Grade Card Report" in the title, and tables with Student / SGPA
-    # columns.  The exam-result format has "Exam" in the title and inline grades.
-    is_grade_card = 'Semester Grade Card Report' in first_text
-    is_exam_result = bool(re.search(r'B\.?Tech\s+S\d.*Exam', first_text, re.IGNORECASE))
+        # The tabular "Semester Grade Card Report" format has the string
+        # "Semester Grade Card Report" in the title, and tables with Student / SGPA
+        # columns.  The exam-result format has "Exam" in the title and inline grades.
+        is_grade_card = 'Semester Grade Card Report' in first_text
+        is_exam_result = bool(re.search(r'B\.?Tech\s+S\d.*Exam', first_text, re.IGNORECASE))
 
-    if is_grade_card:
-        return parse_class_report(pdf_path)
-    elif is_exam_result:
-        return parse_exam_result(pdf_path)
-    else:
-        # Try the tabular parser first; fall back to exam-result
-        semester, courses, students = parse_class_report(pdf_path)
-        if students:
-            return semester, courses, students
-        return parse_exam_result(pdf_path)
+        if is_grade_card:
+            return parse_class_report(pdf)
+        elif is_exam_result:
+            return parse_exam_result(pdf)
+        else:
+            # Try the tabular parser first; fall back to exam-result
+            semester, courses, students = parse_class_report(pdf)
+            if students:
+                return semester, courses, students
+            return parse_exam_result(pdf)
 
 
 def compute_net_backlogs(grade_rows):
