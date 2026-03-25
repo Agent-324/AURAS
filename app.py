@@ -652,7 +652,7 @@ def upload_file():
                     batch_year=b_year,
                     department=dpt,
                 ).all()
-                existing_course_codes = {c.code for c in existing_courses_query}
+                existing_courses = {c.code: c for c in existing_courses_query}
                 
                 # Check which courses are actually taken by students in this class
                 taken_courses = set()
@@ -661,17 +661,22 @@ def upload_file():
                         taken_courses.update(s.get("grades", {}).keys())
 
                 for code in taken_courses:
-                    if code not in existing_course_codes:
-                        name = courses_dict.get(code, "")
-                        db.session.add(
-                            Course(
-                                code=code,
-                                name=name,
-                                semester=semester,
-                                batch_year=b_year,
-                                department=dpt,
-                            )
-                        )
+                    name = courses_dict.get(code, "")
+                    existing_course = existing_courses.get(code)
+                    if existing_course:
+                        if not (existing_course.name or "").strip() and name:
+                            existing_course.name = name
+                        continue
+
+                    course = Course(
+                        code=code,
+                        name=name,
+                        semester=semester,
+                        batch_year=b_year,
+                        department=dpt,
+                    )
+                    db.session.add(course)
+                    existing_courses[code] = course
 
             # Process all students
             all_extracted_regs = [s["register_no"] for s in std_parsed if s.get("register_no")]

@@ -244,6 +244,9 @@ def parse_exam_result(pdf):
     courses = {}                # code -> full name
     students = []
     current_dept = None
+    # Keep this state across page breaks because some PDFs continue the
+    # course-definition block on the next page without repeating the header.
+    in_course_list = False
 
     full_text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
 
@@ -261,8 +264,6 @@ def parse_exam_result(pdf):
     for page in pdf.pages:
         text = page.extract_text() or ''
         lines = text.split('\n')
-
-        in_course_list = False   # True between "Course Code   Course" and "Register No"
 
         # First pass: join continuation lines.
         # A continuation line starts with a course code (e.g. "CET309(B)")
